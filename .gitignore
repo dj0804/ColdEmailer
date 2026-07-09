@@ -1,0 +1,26 @@
+# Secrets & credentials — never commit
+.env
+backend/.env
+token.json
+credentials.json
+
+# Databases
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Personal documents
+assets/
+
+# OS / editor
+.DS_Store
+Thumbs.db
