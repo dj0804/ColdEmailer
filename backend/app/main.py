@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 
 from .db import Base, engine
+from .routers import applications as applications_router
 from .routers import companies as companies_router
+from .routers import drafts as drafts_router
 from .routers import gmail as gmail_router
 
 app = FastAPI(title="Applier")
@@ -16,6 +18,8 @@ def startup() -> None:
 
 app.include_router(gmail_router.router)
 app.include_router(companies_router.router)
+app.include_router(applications_router.router)
+app.include_router(drafts_router.router)
 
 
 @app.get("/api/health")

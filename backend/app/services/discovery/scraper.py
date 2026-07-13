@@ -70,6 +70,33 @@ def _fetch(url: str) -> str | None:
     return None
 
 
+def fetch_context_text(domain: str, max_chars: int = 2500) -> str:
+    """Fetch homepage + /about visible text as grounding for personalization.
+
+    Company-domain-only and robots-respecting, same as the email scraper. Returns
+    a trimmed plain-text snippet ('' if nothing usable).
+    """
+    base = domain if domain.startswith("http") else f"https://{domain}"
+    root_host = urlparse(base).hostname or domain
+    chunks: list[str] = []
+    for path in ("", "/about", "/about-us", "/company"):
+        url = urljoin(base + "/", path.lstrip("/"))
+        if not _same_company(url, root_host) or not _robots_ok(url):
+            continue
+        html = _fetch(url)
+        if not html:
+            continue
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        text = " ".join(soup.get_text(" ").split())
+        if text:
+            chunks.append(text)
+        if sum(len(c) for c in chunks) >= max_chars:
+            break
+    return " ".join(chunks)[:max_chars]
+
+
 def scrape_emails(domain: str, max_pages: int = 6) -> list[dict]:
     """Return emails found on the company's own team/about/contact pages.
 
