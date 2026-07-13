@@ -6,7 +6,7 @@ pydantic-settings
 python-dotenv
 httpx
 beautifulsoup4
-anthropic
+openai
 google-api-python-client
 google-auth-oauthlib
 apscheduler
