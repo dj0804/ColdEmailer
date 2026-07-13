@@ -35,6 +35,7 @@ def chat(
     max_tokens: int = 1200,
     temperature: float | None = None,
     json_mode: bool = False,
+    reasoning_effort: str | None = None,
 ) -> str:
     kwargs: dict = {
         "model": model,
@@ -46,7 +47,12 @@ def chat(
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-    if not _is_reasoning(model) and temperature is not None:
+    if _is_reasoning(model):
+        # Reasoning models reject custom temperature; cap reasoning spend so the
+        # token budget goes to the answer, not hidden reasoning.
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
+    elif temperature is not None:
         kwargs["temperature"] = temperature
 
     resp = client().chat.completions.create(**kwargs)

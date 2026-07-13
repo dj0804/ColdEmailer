@@ -15,54 +15,87 @@ from . import llm
 from .discovery import scraper
 from .resume import resume_text
 
-SYSTEM = """You are helping a strong CS undergraduate write cold outreach emails \
-to real people at companies he wants to intern at (a 6-month internship intended \
-to convert to a full-time role). You write like a sharp, genuine human — not a \
-template, not a marketing bot.
+SYSTEM = """You personalize a proven cold-outreach email for a CS student seeking a \
+6-month internship. The candidate already wrote the email he wants; your job is to \
+adapt it to ONE specific company and recipient — NOT to rewrite it in your own \
+voice. Preserve his wording, rhythm, brevity, and humble tone. Fill the blanks; \
+do not editorialize or pad.
 
-Hard rules:
-- Sound like a real person emailing another real person. Vary sentence rhythm.
-- Open with something specific to THIS company and THIS recipient's role. Never \
-open with a generic "I hope this email finds you well" or "I am writing to".
-- Ground every company-specific claim in the provided company context or the \
-recipient's title. Do NOT invent facts, products, or news you weren't given.
-- Connect 1-2 concrete, relevant things from the candidate's resume to what this \
-company/person likely cares about. Be specific (name the tech or the result), not \
-a laundry list.
-- Be concise: 110-170 words in the body. Short paragraphs.
-- Confident but humble; no groveling, no hype, no buzzword soup.
-- The ask is a brief chat about a 6-month internship that could convert to \
-full-time. Make the ask easy to say yes to.
-- Do not fabricate a shared connection, a prior meeting, or that you use their \
-product unless the context supports it.
-- End with a sign-off using the candidate's real name and contact line provided.
+This is the template and voice to follow closely:
 
-Return ONLY a JSON object: {"subject": "...", "body": "..."}. The subject is \
-specific and low-hype (no clickbait, no ALL CAPS). The body is the full email \
-text including the sign-off."""
+  Hi {{first_name}},
 
-USER_TEMPLATE = """CANDIDATE RESUME (source of truth for the candidate's background):
-{resume}
+  I'll keep this short.
 
-CANDIDATE CONTACT (use exactly in the sign-off):
+  I'm Dev, a {{year}} at {{school}}. I've been following the work your team is \
+doing around {{specific_area}}, and it genuinely looks like the kind of \
+engineering environment I want to learn in.
+
+  Over the past year I've worked on ML systems across internships at {{prior}} — \
+spanning recommendation engines, computer vision, and scalable AI pipelines. I'm \
+now looking for a 6-month internship — {{availability}}.
+
+  {{specific_ask}}
+
+  I've attached my resume. If you think my profile could fit your team or another \
+team at {{company}}, I'd really appreciate the chance to chat.
+
+  Either way, thanks for reading — I appreciate it.
+
+  Cheers,
+  Dev Jain
+
+Rules:
+- Keep it SHORT — roughly 130-160 words in the body, same paragraphing as above.
+- {{first_name}} = the recipient's first name.
+- {{specific_area}} is the make-or-break slot: it must be a CONCRETE thing this \
+company actually does — a real product, research direction, platform, or domain — \
+drawn only from the provided company context or the recipient's title. If the \
+context is thin, use a genuinely accurate description of the company's domain; \
+NEVER invent a product, launch, or detail you weren't given, and never write \
+vague filler like "your work in AI".
+- {{specific_ask}}: one or two sentences making a direct, specific ask for a \
+6-month internship on the recipient's team, and SUBTLY note openness to it \
+converting to a full-time role (a light touch like "with the hope it could grow \
+into something longer-term" — never pushy, never the main focus).
+- Do NOT add new claims about the candidate beyond the resume. Do NOT invent a \
+shared connection or that he uses their product.
+- Keep the candidate's phrases ("I'll keep this short.", "Either way, thanks for \
+reading — I appreciate it.", "Cheers,"). You may lightly adjust the credibility \
+line to fit, but keep it brief and non-jargony.
+- End with the sign-off block using the exact contact line provided.
+
+Return ONLY a JSON object: {"subject": "...", "body": "..."}. Subject is short, \
+specific, low-hype (e.g. "6-month internship — final-year CS student at VIT"), \
+tailored to the company where natural. Body is the full email including sign-off."""
+
+USER_TEMPLATE = """Fill the template for this specific recipient and company.
+
+CANDIDATE FACTS (use these exactly):
 Name: {name}
-Email: {email}
-Phone: {phone}
-Links: {links}
-
-TARGET COMPANY: {company}
-ROLE THE CANDIDATE WANTS: {role}
+Year/School: {year} at {school}
+Prior internships: {prior}
+Availability: {availability}
+Sign-off contact line (use verbatim under "Dev Jain"):
+{email} | {phone}
+{links}
 
 RECIPIENT:
-Name: {recipient_name}
+First name to greet: {recipient_name}
 Title: {recipient_title}
 
-COMPANY CONTEXT (scraped from their site; may be empty — if empty, rely only on \
-the recipient's title and do NOT invent specifics):
+TARGET COMPANY: {company}
+
+COMPANY CONTEXT (scraped from their own site; may be empty — if empty, describe \
+their domain accurately from the recipient's title and company name, and do NOT \
+invent specifics):
 {company_context}
 
-Write the email now. Make it clearly tailored to {company} and to {recipient_name}'s \
-role. Return only the JSON object."""
+Resume (for grounding the credibility line; do not copy jargon wholesale):
+{resume}
+
+Produce the JSON now. The {{specific_area}} must be concrete and true for \
+{company}. Return only the JSON object."""
 
 
 def _extract_json(text: str) -> dict:
@@ -99,26 +132,37 @@ def generate_outreach(
         email=settings.candidate_email,
         phone=settings.candidate_phone,
         links=settings.candidate_links,
+        school=settings.candidate_school,
+        year=settings.candidate_year,
+        prior=settings.candidate_prior,
+        availability=settings.candidate_availability,
         company=company_name,
-        role=role,
-        recipient_name=recipient_name or "the hiring team",
+        recipient_name=(recipient_name.split()[0] if recipient_name else "there"),
         recipient_title=recipient_title or "(unknown title)",
         company_context=company_context or "(none available)",
     )
 
-    raw = llm.chat(
-        model=settings.openai_draft_model,
-        system=SYSTEM,
-        user=user,
-        # Reasoning models (gpt-5) spend part of this budget on hidden reasoning
-        # before emitting the answer, so leave generous headroom.
-        max_tokens=5000,
-        temperature=0.8,  # ignored by reasoning models; adds variety on others
-        json_mode=True,
-    )
-    data = _extract_json(raw)
-    subject = (data.get("subject") or "").strip()
-    body = (data.get("body") or "").strip()
-    if not subject or not body:
-        raise ValueError(f"LLM returned incomplete draft: {raw[:200]}")
-    return {"subject": subject, "body": body}
+    # gpt-5 occasionally returns empty/unparseable output; retry a couple times.
+    last_err: Exception | None = None
+    for attempt in range(3):
+        raw = llm.chat(
+            model=settings.openai_draft_model,
+            system=SYSTEM,
+            user=user,
+            # Reasoning models (gpt-5) spend part of this budget on hidden reasoning
+            # before emitting the answer, so leave generous headroom.
+            max_tokens=6000,
+            temperature=0.8,       # ignored by reasoning models; variety on others
+            reasoning_effort="low",  # templated fill — heavy reasoning not needed
+            json_mode=True,
+        )
+        try:
+            data = _extract_json(raw)
+            subject = (data.get("subject") or "").strip()
+            body = (data.get("body") or "").strip()
+            if subject and body:
+                return {"subject": subject, "body": body}
+            last_err = ValueError(f"incomplete draft: {raw[:120]!r}")
+        except (ValueError, KeyError) as e:
+            last_err = e
+    raise ValueError(f"LLM failed to produce a valid draft after 3 tries: {last_err}")

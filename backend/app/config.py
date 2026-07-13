@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     candidate_email: str = "devv.jain2005@gmail.com"
     candidate_phone: str = "+91 83686 60576"
     candidate_links: str = "github.com/dj0804 | portfoliowebv2.vercel.app"
+    candidate_school: str = "VIT Vellore"
+    candidate_year: str = "final-year (4th-year) CS student"
+    candidate_prior: str = "Comviva, Samsung Prism, and Minfy"
+    candidate_availability: str = (
+        "I can start right away remotely, then join on-site from January 2027 "
+        "once my coursework wraps up"
+    )
     email_verify_provider: str = "hunter"
     email_verify_api_key: str = ""
     gmail_credentials_file: str = "credentials.json"
