@@ -88,6 +88,21 @@ def approve_draft(draft_id: int, db: Session = Depends(get_db)):
     return _approve_and_send(db, draft)
 
 
+@router.post("/{draft_id}/reject", response_model=schemas.DraftOut)
+def reject_draft(draft_id: int, db: Session = Depends(get_db)):
+    """Discard a draft without sending. Never touches Gmail."""
+    draft = db.get(models.EmailDraft, draft_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if draft.status == "sent":
+        raise HTTPException(status_code=409, detail="Draft already sent")
+    draft.status = "rejected"
+    draft.approved_at = None
+    db.commit()
+    db.refresh(draft)
+    return draft
+
+
 @router.post("/batch/generate", response_model=list[schemas.DraftOut])
 def batch_generate(payload: schemas.BatchGenerate, db: Session = Depends(get_db)):
     if not payload.company_ids:

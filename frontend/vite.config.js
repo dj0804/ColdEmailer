@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Honour PORT when the harness assigns one; fall back to Vite's default.
+    port: process.env.PORT ? Number(process.env.PORT) : undefined,
     proxy: {
       '/api': 'http://localhost:8000',
     },

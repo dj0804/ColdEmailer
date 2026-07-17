@@ -6,6 +6,7 @@ from .db import Base, engine
 from .jobs import check_ghosting, poll_replies
 from .routers import applications as applications_router
 from .routers import companies as companies_router
+from .routers import dashboard as dashboard_router
 from .routers import drafts as drafts_router
 from .routers import gmail as gmail_router
 from .routers import jobs as jobs_router
@@ -53,6 +54,7 @@ app.include_router(companies_router.router)
 app.include_router(applications_router.router)
 app.include_router(drafts_router.router)
 app.include_router(jobs_router.router)
+app.include_router(dashboard_router.router)
 
 
 @app.get("/api/health")
