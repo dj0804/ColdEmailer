@@ -104,3 +104,14 @@ class SendResult(BaseModel):
     gmail_message_id: str | None
     thread_id: str | None
     sent_at: str
+
+
+class ReplyEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    application_id: int
+    gmail_message_id: str
+    classification: str
+    snippet: str | None
+    classified_at: datetime

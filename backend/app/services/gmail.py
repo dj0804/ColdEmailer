@@ -175,6 +175,75 @@ def _ensure_label(svc, name: str) -> str:
     return created["id"]
 
 
+def _header(msg: dict, name: str) -> str:
+    for h in msg.get("payload", {}).get("headers", []):
+        if h["name"].lower() == name.lower():
+            return h["value"]
+    return ""
+
+
+def message_from(msg: dict) -> str:
+    """The 'From' header of a message resource (e.g. 'Jane <jane@x.com>')."""
+    return _header(msg, "From")
+
+
+def _strip_quoted(text: str) -> str:
+    """Drop quoted reply history so classification sees only the new message.
+
+    Removes '>' quote lines and everything after common reply separators
+    ('On <date> ... wrote:', '-----Original Message-----'). Falls back to the
+    full text if stripping would leave nothing.
+    """
+    import re
+
+    # Cut at the "On ... wrote:" separator (handles wrapped variants).
+    m = re.search(r"\nOn .*wrote:", text)
+    if m:
+        text = text[: m.start()]
+    text = re.split(r"-----\s*Original Message\s*-----", text)[0]
+    lines = [ln for ln in text.splitlines() if not ln.lstrip().startswith(">")]
+    stripped = "\n".join(lines).strip()
+    return stripped or text.strip()
+
+
+def message_text(msg: dict, max_chars: int = 4000) -> str:
+    """Extract readable text from a message resource (plain-text preferred).
+
+    Quoted reply history is stripped so only the sender's new words remain.
+    """
+    payload = msg.get("payload", {})
+
+    def walk(part) -> str:
+        mime = part.get("mimeType", "")
+        body = part.get("body", {})
+        data = body.get("data")
+        if mime == "text/plain" and data:
+            return base64.urlsafe_b64decode(data).decode("utf-8", "replace")
+        text = ""
+        for sub in part.get("parts", []) or []:
+            text += walk(sub)
+        return text
+
+    text = walk(payload).strip()
+    if not text:  # fall back to HTML stripped, then the snippet
+        def walk_html(part) -> str:
+            if part.get("mimeType") == "text/html" and part.get("body", {}).get("data"):
+                raw = base64.urlsafe_b64decode(part["body"]["data"]).decode(
+                    "utf-8", "replace"
+                )
+                from bs4 import BeautifulSoup
+
+                return BeautifulSoup(raw, "html.parser").get_text(" ")
+            out = ""
+            for sub in part.get("parts", []) or []:
+                out += walk_html(sub)
+            return out
+
+        text = walk_html(payload).strip() or msg.get("snippet", "")
+    text = _strip_quoted(text)
+    return " ".join(text.split())[:max_chars]
+
+
 def apply_label(message_id: str, label_name: str = SENT_LABEL) -> dict:
     """Apply a label (creating it if missing) to a message."""
     svc = get_service()
