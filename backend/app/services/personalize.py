@@ -98,6 +98,88 @@ Produce the JSON now. The {{specific_area}} must be concrete and true for \
 {company}. Return only the JSON object."""
 
 
+NUDGE_SYSTEM = """You write a SHORT follow-up email for a student who cold-emailed \
+someone about a 6-month internship and got no reply. It sends as a reply on the \
+original thread, so do not re-introduce him at length or repeat the whole pitch.
+
+Voice: same person as the original — plain, warm, brief, never pushy or guilt-trippy. \
+No "just circling back", no "per my last email", no fake urgency.
+
+Nudge #1 (first follow-up): a light bump. Acknowledge they're busy, restate the ask \
+in one line (6-month internship, can start remotely now / on-site from Jan 2027), and \
+make it easy to reply even with a no. 50-80 words.
+
+Nudge #2 (final follow-up): gracious close. Signal this is the last note, leave the \
+door open, thank them sincerely. Shorter still — 35-60 words. Do NOT make a new ask \
+beyond "if it's not a fit, no worries at all".
+
+Rules:
+- Never invent new facts, achievements, or company details.
+- Do not re-attach or mention the resume being attached again (it was already sent); \
+you may refer to "my note below" or "my earlier email".
+- End with "Cheers,\\nDev Jain" and nothing after it (no contact block — it's a reply).
+
+Return ONLY JSON: {"subject": "...", "body": "..."}. The subject should be the \
+original subject prefixed with "Re: " unless it already starts with "Re:"."""
+
+NUDGE_USER = """This is follow-up #{nudge_number} on a thread that has had no reply \
+for {business_days} business days.
+
+RECIPIENT: {recipient_name} ({recipient_title}) at {company}
+
+ORIGINAL EMAIL SUBJECT: {original_subject}
+
+ORIGINAL EMAIL BODY:
+{original_body}
+
+Write follow-up #{nudge_number} now. Return only the JSON object."""
+
+
+def generate_nudge(
+    *,
+    nudge_number: int,
+    company_name: str,
+    recipient_name: str | None,
+    recipient_title: str | None,
+    original_subject: str,
+    original_body: str,
+    business_days: int,
+) -> dict:
+    """Return {'subject': str, 'body': str} for a nudge reply on an existing thread."""
+    user = NUDGE_USER.format(
+        nudge_number=nudge_number,
+        business_days=business_days,
+        recipient_name=(recipient_name.split()[0] if recipient_name else "there"),
+        recipient_title=recipient_title or "(unknown title)",
+        company=company_name,
+        original_subject=original_subject,
+        original_body=original_body,
+    )
+    last_err: Exception | None = None
+    for _ in range(3):
+        raw = llm.chat(
+            model=settings.openai_draft_model,
+            system=NUDGE_SYSTEM,
+            user=user,
+            max_tokens=4000,
+            temperature=0.7,
+            reasoning_effort="low",
+            json_mode=True,
+        )
+        try:
+            data = _extract_json(raw)
+            subject = (data.get("subject") or "").strip()
+            body = (data.get("body") or "").strip()
+            if subject and body:
+                if not subject.lower().startswith("re:"):
+                    subject = f"Re: {subject}"
+                return {"subject": subject, "body": body}
+            last_err = ValueError(f"incomplete nudge: {raw[:120]!r}")
+        except (ValueError, KeyError) as e:
+            last_err = e
+    raise ValueError(f"LLM failed to produce a valid nudge after 3 tries: {last_err}")
+
+
 def _extract_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):

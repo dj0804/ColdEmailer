@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     reply_poll_minutes: int = 15
     nudge1_business_days: int = 10
     nudge2_business_days: int = 20
+    # Business days after which a still-silent application is marked ghosted_dead.
+    # Kept past nudge2 so the second nudge has time to land.
+    nudge_dead_business_days: int = 30
+    ghost_check_hour: int = 8  # daily ghosting sweep, UTC hour
     database_url: str = "sqlite:///./applier.db"
 
 

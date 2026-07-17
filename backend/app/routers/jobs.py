@@ -16,6 +16,12 @@ def trigger_poll():
     return jobs.poll_replies()
 
 
+@router.post("/jobs/check-ghosting")
+def trigger_ghost_check():
+    """Run the ghosting sweep once, now. Only stages drafts; never sends."""
+    return jobs.check_ghosting()
+
+
 @router.get("/reply-events", response_model=list[schemas.ReplyEventOut])
 def list_reply_events(db: Session = Depends(get_db)):
     return db.scalars(

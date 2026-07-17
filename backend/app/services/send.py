@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Application, EmailDraft
+from ..models import Application, EmailDraft, NudgeHistory
 from . import gmail, rate_limit
 
 
@@ -79,6 +80,12 @@ def send_approved_draft(db: Session, draft_id: int) -> dict:
     if draft.type == "outreach":
         app.sent_at = now
         app.stage = "sent"
+    else:  # nudge1 / nudge2 — stamp the history row so we don't re-nudge
+        history = db.scalar(
+            select(NudgeHistory).where(NudgeHistory.draft_id == draft.id)
+        )
+        if history:
+            history.sent_at = now
 
     db.commit()
     return {

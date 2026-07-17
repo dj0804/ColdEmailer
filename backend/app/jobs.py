@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from .db import SessionLocal
 from .models import Application, EmailDraft, ReplyEvent
-from .services import classify, gmail
+from .services import classify, gmail, nudge
 
 # Stages we stop polling (definitive outcomes).
 TERMINAL_STAGES = {"rejection", "ghosted_dead"}
@@ -103,6 +103,36 @@ def poll_replies() -> dict:
                     summary["classifications"].get(label, 0) + 1
                 )
 
+            db.commit()
+        return summary
+    finally:
+        db.close()
+
+
+def check_ghosting() -> dict:
+    """Daily sweep: stage nudge drafts for silent applications, mark dead ones.
+
+    Only ever *stages* drafts for approval — this job never sends anything.
+    """
+    db = SessionLocal()
+    summary: dict = {"checked": 0, "actions": {}}
+    try:
+        apps = db.scalars(
+            select(Application).where(
+                Application.stage == "sent",
+                Application.sent_at.is_not(None),
+            )
+        ).all()
+        for app in apps:
+            summary["checked"] += 1
+            try:
+                action = nudge.process_application(db, app)
+            except Exception as e:  # noqa: BLE001 - one bad app shouldn't kill the sweep
+                db.rollback()
+                summary["actions"][f"error:{app.id}"] = str(e)[:120]
+                continue
+            if action:
+                summary["actions"][action] = summary["actions"].get(action, 0) + 1
             db.commit()
         return summary
     finally:

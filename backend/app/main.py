@@ -3,7 +3,7 @@ from fastapi import FastAPI
 
 from .config import settings
 from .db import Base, engine
-from .jobs import poll_replies
+from .jobs import check_ghosting, poll_replies
 from .routers import applications as applications_router
 from .routers import companies as companies_router
 from .routers import drafts as drafts_router
@@ -25,6 +25,15 @@ def startup() -> None:
         "interval",
         minutes=settings.reply_poll_minutes,
         id="poll_replies",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        check_ghosting,
+        "cron",
+        hour=settings.ghost_check_hour,
+        id="check_ghosting",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
