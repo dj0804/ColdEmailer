@@ -115,7 +115,9 @@ def batch_generate(payload: schemas.BatchGenerate, db: Session = Depends(get_db)
         if company is None:
             errors.append(f"company {cid}: not found")
             continue
-        app = drafting.ensure_application(db, cid, payload.role)
+        app = drafting.ensure_application(
+            db, cid, payload.role, resume_variant=payload.resume_variant
+        )
         if app.contact is None:
             errors.append(f"{company.name}: no contact (run discovery first)")
             continue

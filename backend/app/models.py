@@ -68,6 +68,8 @@ class Application(Base):
         ForeignKey("contacts.id"), nullable=True
     )
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Which role-specific resume PDF to attach (see services/resume.py).
+    resume_variant: Mapped[str | None] = mapped_column(String(32), nullable=True)
     stage: Mapped[str] = mapped_column(String(32), default="draft")
     gmail_thread_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

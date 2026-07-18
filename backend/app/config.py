@@ -8,7 +8,11 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"          # reply classification (cheap/fast)
     openai_draft_model: str = "gpt-5"     # outreach + nudge drafting (higher quality)
     hunter_api_key: str = ""
-    resume_path: str = "../assets/resume.pdf"
+    # Role-specific resume variants live at {resume_dir}/resume_{variant}.pdf
+    # (e.g. resume_ai_engineer.pdf). Applications carry the variant to attach;
+    # anything unset falls back to resume_default_variant.
+    resume_dir: str = "../assets"
+    resume_default_variant: str = "ai_engineer"
 
     # Candidate identity injected into the drafting prompt. Personal details are
     # intentionally NOT hardcoded here — set them in .env (gitignored) so they

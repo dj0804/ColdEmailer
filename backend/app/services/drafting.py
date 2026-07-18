@@ -15,9 +15,9 @@ from . import personalize
 from .resume import resume_abspath
 
 
-def default_attachments() -> list[str]:
-    """Resume-only outreach (per user's choice)."""
-    return [str(resume_abspath())]
+def default_attachments(resume_variant: str | None = None) -> list[str]:
+    """Resume-only outreach, using the role-specific variant for this application."""
+    return [str(resume_abspath(resume_variant))]
 
 
 def latest_contact(db: Session, company_id: int) -> Contact | None:
@@ -29,7 +29,11 @@ def latest_contact(db: Session, company_id: int) -> Contact | None:
 
 
 def ensure_application(
-    db: Session, company_id: int, role: str, contact_id: int | None = None
+    db: Session,
+    company_id: int,
+    role: str,
+    contact_id: int | None = None,
+    resume_variant: str | None = None,
 ) -> Application:
     """Reuse a company's open application if one exists, else create one."""
     if contact_id is None:
@@ -47,11 +51,17 @@ def ensure_application(
             existing.contact_id = contact_id
         if role:
             existing.role = role
+        if resume_variant:
+            existing.resume_variant = resume_variant
         db.commit()
         return existing
 
     app = Application(
-        company_id=company_id, contact_id=contact_id, role=role, stage="draft"
+        company_id=company_id,
+        contact_id=contact_id,
+        role=role,
+        resume_variant=resume_variant,
+        stage="draft",
     )
     db.add(app)
     db.commit()
@@ -72,6 +82,7 @@ def generate_draft_for_application(
         recipient_name=contact.name if contact else None,
         recipient_title=contact.title if contact else None,
         role=app.role or "6-month internship (intern-to-FTE)",
+        resume_variant=app.resume_variant,
     )
 
     draft = EmailDraft(
@@ -79,7 +90,7 @@ def generate_draft_for_application(
         type="outreach",
         subject=result["subject"],
         body=result["body"],
-        attachment_paths=json.dumps(default_attachments()),
+        attachment_paths=json.dumps(default_attachments(app.resume_variant)),
         batch_id=batch_id,
         status="pending",
     )

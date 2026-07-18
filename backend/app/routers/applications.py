@@ -16,7 +16,11 @@ def create_application(payload: schemas.ApplicationCreate, db: Session = Depends
     if db.get(models.Company, payload.company_id) is None:
         raise HTTPException(status_code=404, detail="Company not found")
     app = drafting.ensure_application(
-        db, payload.company_id, payload.role, payload.contact_id
+        db,
+        payload.company_id,
+        payload.role,
+        payload.contact_id,
+        payload.resume_variant,
     )
     return app
 

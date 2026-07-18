@@ -197,6 +197,7 @@ def generate_outreach(
     recipient_name: str | None,
     recipient_title: str | None,
     role: str,
+    resume_variant: str | None = None,
 ) -> dict:
     """Return {'subject': str, 'body': str} for a single personalized outreach email."""
     company_context = ""
@@ -209,7 +210,7 @@ def generate_outreach(
         company_context = f"{company_notes}\n{company_context}".strip()
 
     user = USER_TEMPLATE.format(
-        resume=resume_text(),
+        resume=resume_text(resume_variant),
         name=settings.candidate_name,
         email=settings.candidate_email,
         phone=settings.candidate_phone,

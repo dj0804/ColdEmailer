@@ -53,6 +53,7 @@ class ApplicationCreate(BaseModel):
     company_id: int
     contact_id: int | None = None  # defaults to the company's latest contact
     role: str = "6-month Software/ML Engineering Internship (intern-to-FTE)"
+    resume_variant: str | None = None  # ai_engineer | ml_engineer | data_scientist
 
 
 class ApplicationOut(BaseModel):
@@ -62,6 +63,7 @@ class ApplicationOut(BaseModel):
     company_id: int
     contact_id: int | None
     role: str | None
+    resume_variant: str | None
     stage: str
     gmail_thread_id: str | None
     sent_at: datetime | None
@@ -95,6 +97,7 @@ class DraftEdit(BaseModel):
 class BatchGenerate(BaseModel):
     company_ids: list[int]
     role: str = "6-month Software/ML Engineering Internship (intern-to-FTE)"
+    resume_variant: str | None = None  # applied to every app in the batch
 
 
 class SendResult(BaseModel):
