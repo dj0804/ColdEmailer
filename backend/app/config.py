@@ -9,17 +9,18 @@ class Settings(BaseSettings):
     openai_draft_model: str = "gpt-5"     # outreach + nudge drafting (higher quality)
     hunter_api_key: str = ""
     resume_path: str = "../assets/resume.pdf"
-    candidate_name: str = "Dev Jain"
-    candidate_email: str = "devv.jain2005@gmail.com"
-    candidate_phone: str = "+91 83686 60576"
-    candidate_links: str = "github.com/dj0804 | portfoliowebv2.vercel.app"
-    candidate_school: str = "VIT Vellore"
-    candidate_year: str = "final-year (4th-year) CS student"
-    candidate_prior: str = "Comviva, Samsung Prism, and Minfy"
-    candidate_availability: str = (
-        "I can start right away remotely, then join on-site from January 2027 "
-        "once my coursework wraps up"
-    )
+
+    # Candidate identity injected into the drafting prompt. Personal details are
+    # intentionally NOT hardcoded here — set them in .env (gitignored) so they
+    # never land in version control. See .env.example.
+    candidate_name: str = ""
+    candidate_email: str = ""
+    candidate_phone: str = ""
+    candidate_links: str = ""
+    candidate_school: str = ""
+    candidate_year: str = ""
+    candidate_prior: str = ""
+    candidate_availability: str = ""
     email_verify_provider: str = "hunter"
     email_verify_api_key: str = ""
     gmail_credentials_file: str = "credentials.json"

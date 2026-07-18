@@ -1,0 +1,38 @@
+{
+  "_note": "Hand-labeled evaluation set for the reply classifier. Each case is a realistic reply to a cold internship-outreach email, with a human-assigned gold label. Synthetic (author-written), not scraped from real correspondence.",
+  "cases": [
+    {"id": 1,  "label": "interview_request", "from": "priya@fintechco.com",   "text": "Hi Dev, thanks for reaching out. Your ML background looks relevant to what we're building. Are you free for a 30-minute intro call this Thursday or Friday afternoon?"},
+    {"id": 2,  "label": "interview_request", "from": "recruiting@scaleai.io", "text": "Thanks for your interest! Please book a slot that works for you here: https://calendly.com/scaleai/intro-30"},
+    {"id": 3,  "label": "interview_request", "from": "arun@dataworks.in",     "text": "Dev — can you share your availability for next week? I'd like to set up a technical screen with one of our senior engineers."},
+    {"id": 4,  "label": "interview_request", "from": "hr@nimbus.ai",          "text": "We'd like to move forward. Sending a calendar invite for Monday 11am IST — let me know if that clashes."},
+    {"id": 5,  "label": "interview_request", "from": "meera@robotics.co",     "text": "Interesting profile. Before we schedule, could you do a short take-home? If that goes well we'll set up interviews with the team."},
+    {"id": 6,  "label": "interview_request", "from": "talent@voxel.dev",      "text": "Hey Dev! Loved the gesture-recognition project. Got 20 mins this week for a quick chat about our CV internship?"},
+    {"id": 7,  "label": "interview_request", "from": "s.kapoor@edgeml.com",   "text": "Let's talk. What does your Wednesday look like?"},
+
+    {"id": 8,  "label": "recruiter_reply",   "from": "hiring@brightlabs.com", "text": "Thanks Dev. We do run an internship program — please apply through our careers page at brightlabs.com/careers and mention my name in the referral field. I'll flag your application internally."},
+    {"id": 9,  "label": "recruiter_reply",   "from": "nikhil@quantum.io",     "text": "Appreciate you reaching out. Could you tell me a bit more about which teams interest you most, and confirm your earliest start date?"},
+    {"id": 10, "label": "recruiter_reply",   "from": "people@stackly.com",    "text": "Thanks for the note. We don't have an opening right this second, but your profile is strong and I've added you to our talent pool. We'll be in touch when the next intern cycle opens."},
+    {"id": 11, "label": "recruiter_reply",   "from": "founder@tinyml.co",     "text": "Forwarding this to Ravi who runs our ML team — he's the right person to evaluate this. Good luck!"},
+    {"id": 12, "label": "recruiter_reply",   "from": "careers@zenith.ai",     "text": "Hi Dev, thanks for writing in. Can you send over a portfolio or GitHub links for the recommendation-engine work you mentioned?"},
+    {"id": 13, "label": "recruiter_reply",   "from": "anita@northstar.in",    "text": "Received, thank you. Our internship hiring runs through campus placements — please check with your placement cell about our VIT drive in September."},
+    {"id": 14, "label": "recruiter_reply",   "from": "dev-hiring@orbit.com",  "text": "Nice background. We're mostly looking for candidates who can commit full-time on-site from day one, but tell me more about your January availability and I'll see what's possible."},
+    {"id": 15, "label": "recruiter_reply",   "from": "raj@cloudpivot.io",     "text": "Thanks for the email — noted. I'll keep you in mind for when we open our next round of intern roles."},
+
+    {"id": 16, "label": "rejection",         "from": "hr@megacorp.com",       "text": "Thank you for your interest. Unfortunately we are not hiring interns for this cycle. We wish you the best in your search."},
+    {"id": 17, "label": "rejection",         "from": "talent@apexai.com",     "text": "Hi Dev, after reviewing your profile we've decided not to move forward at this time. We appreciate you reaching out."},
+    {"id": 18, "label": "rejection",         "from": "founder@leanstack.co",  "text": "We're a team of four and genuinely can't take on an intern right now — no bandwidth to mentor. Sorry!"},
+    {"id": 19, "label": "rejection",         "from": "recruiting@bigbank.com","text": "All our early-careers hiring is closed for 2026. Please reapply next year through the university portal."},
+    {"id": 20, "label": "rejection",         "from": "ml-lead@vertex.io",     "text": "Thanks, but we only take interns who've completed a master's degree. Not a fit for us."},
+    {"id": 21, "label": "rejection",         "from": "people@stellar.dev",    "text": "Hi Dev — appreciate the note, but we've filled our internship slots for this term. Best of luck."},
+    {"id": 22, "label": "rejection",         "from": "no-reply@hiring.co",    "text": "Thank you for applying. We have decided to pursue other candidates whose experience more closely matches our current needs."},
+
+    {"id": 23, "label": "other",             "from": "amar@uniphore.com",     "text": "I am currently out of the office until 28 July with limited access to email. For urgent matters please contact my colleague at ops@uniphore.com."},
+    {"id": 24, "label": "other",             "from": "mailer-daemon@googlemail.com", "text": "Address not found. Your message wasn't delivered to contact@deadstartup.com because the domain couldn't be found. The response was: DNS Error: 12 DNS type 'mx' lookup of deadstartup.com responded with code NXDOMAIN"},
+    {"id": 25, "label": "other",             "from": "newsletter@techdigest.com", "text": "This week in AI: 12 papers you should read, funding rounds, and the state of open-source LLMs. Click here to read online. Unsubscribe at any time."},
+    {"id": 26, "label": "other",             "from": "noreply@calendly.com",  "text": "This is an automated notification. Your event has been added to the calendar. Do not reply to this message."},
+    {"id": 27, "label": "other",             "from": "auto@parental.leave",   "text": "I'm on parental leave until March and not checking email. Please reach out to the team alias instead."},
+    {"id": 28, "label": "other",             "from": "spam@crypto-deals.biz", "text": "Congratulations! You have been selected for an exclusive investment opportunity. Claim your bonus now before it expires!"},
+    {"id": 29, "label": "other",             "from": "postmaster@corp.com",   "text": "Delivery delayed. The server for the recipient domain is unreachable. The system will keep trying for 24 more hours."},
+    {"id": 30, "label": "other",             "from": "hr@company.com",        "text": "Received."}
+  ]
+}

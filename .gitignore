@@ -24,3 +24,7 @@ assets/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Local tooling
+.claude/
+CLAUDE.md
