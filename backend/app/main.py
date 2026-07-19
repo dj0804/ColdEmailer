@@ -3,7 +3,7 @@ from fastapi import FastAPI
 
 from .config import settings
 from .db import Base, engine
-from .jobs import check_ghosting, poll_replies
+from .jobs import check_ghosting, daily_outreach, poll_replies
 from .routers import applications as applications_router
 from .routers import companies as companies_router
 from .routers import dashboard as dashboard_router
@@ -39,6 +39,19 @@ def startup() -> None:
         max_instances=1,
         coalesce=True,
     )
+    if settings.outreach_enabled:
+        # Weekdays only — cold email sent over a weekend just gets buried.
+        scheduler.add_job(
+            daily_outreach,
+            "cron",
+            day_of_week="mon-fri",
+            hour=settings.outreach_hour,
+            id="daily_outreach",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+
     if not scheduler.running:
         scheduler.start()
 

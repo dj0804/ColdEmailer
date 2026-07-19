@@ -6,12 +6,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from .config import settings
 from .db import SessionLocal
-from .models import Application, EmailDraft, ReplyEvent
-from .services import classify, gmail, nudge
+from .models import Application, Contact, EmailDraft, ReplyEvent
+from .services import classify, drafting, gmail, nudge, queueing
+from .services.discovery import chain as discovery_chain
 
 # Stages we stop polling (definitive outcomes).
-TERMINAL_STAGES = {"rejection", "ghosted_dead"}
+TERMINAL_STAGES = {"rejection", "ghosted_dead", "duplicate_suppressed"}
 # Rank used so a later, lesser reply can't downgrade a better stage.
 STAGE_RANK = {"sent": 1, "recruiter_reply": 2, "interview_request": 3}
 
@@ -104,6 +106,88 @@ def poll_replies() -> dict:
                 )
 
             db.commit()
+        return summary
+    finally:
+        db.close()
+
+
+def daily_outreach(limit: int | None = None) -> dict:
+    """Work through the company queue: discover a contact, then stage a draft.
+
+    Runs on weekdays only (weekend cold email gets buried). This job NEVER sends
+    — every draft lands in 'pending' and still needs explicit approval.
+    """
+    db = SessionLocal()
+    limit = limit or settings.outreach_per_day
+    summary: dict = {
+        "attempted": 0, "drafted": 0, "no_contact": 0, "errors": [], "companies": []
+    }
+    try:
+        for company in queueing.next_batch(db, limit):
+            summary["attempted"] += 1
+
+            contact = db.scalar(
+                select(Contact)
+                .where(Contact.company_id == company.id)
+                .order_by(Contact.id.desc())
+            )
+
+            # 1. Discover a contact if we don't already have one.
+            if contact is None:
+                try:
+                    found = discovery_chain.discover_contact(company.domain or "")
+                except Exception as e:  # noqa: BLE001 - keep the batch going
+                    summary["errors"].append(f"{company.name}: discovery {e}"[:160])
+                    continue
+                if found is None:
+                    company.queue_status = "skipped"
+                    company.notes = ((company.notes or "") + " | no contact found").strip()
+                    db.commit()
+                    summary["no_contact"] += 1
+                    summary["companies"].append(
+                        {"company": company.name, "result": "no_contact"}
+                    )
+                    continue
+                contact = Contact(
+                    company_id=company.id,
+                    name=found.name,
+                    email=found.email,
+                    title=found.title,
+                    source=found.source,
+                    verified=found.verified,
+                )
+                db.add(contact)
+                db.commit()
+                db.refresh(contact)
+
+            # 2. Stage a personalized draft with the role-matched resume.
+            try:
+                role = company.target_role or "6-month internship (intern-to-FTE)"
+                app = drafting.ensure_application(
+                    db,
+                    company.id,
+                    role if role.lower().startswith("6-month") else f"6-month {role} (intern-to-FTE)",
+                    contact_id=contact.id,
+                    resume_variant=company.resume_variant,
+                )
+                draft = drafting.generate_draft_for_application(db, app)
+            except Exception as e:  # noqa: BLE001
+                db.rollback()
+                summary["errors"].append(f"{company.name}: draft {e}"[:160])
+                continue
+
+            company.queue_status = "done"
+            db.commit()
+            summary["drafted"] += 1
+            summary["companies"].append(
+                {
+                    "company": company.name,
+                    "result": "drafted",
+                    "draft_id": draft.id,
+                    "to": contact.email,
+                    "resume_variant": app.resume_variant,
+                }
+            )
         return summary
     finally:
         db.close()

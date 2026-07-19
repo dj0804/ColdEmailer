@@ -34,6 +34,12 @@ class Company(Base):
     domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
     careers_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Outreach queue: the daily routine works through 'queued' companies in
+    # priority order. 'done' = drafted, 'skipped' = no contact found / excluded.
+    target_role: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resume_variant: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    queue_status: Mapped[str] = mapped_column(String(16), default="queued")
+    priority: Mapped[int] = mapped_column(Integer, default=100)  # lower = sooner
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     contacts: Mapped[list["Contact"]] = relationship(

@@ -109,6 +109,18 @@ class SendResult(BaseModel):
     sent_at: str
 
 
+class TargetIn(BaseModel):
+    name: str
+    domain: str | None = None
+    target_role: str | None = None
+    resume_variant: str | None = None  # inferred from target_role when omitted
+    priority: int = 100
+
+
+class BulkTargets(BaseModel):
+    targets: list[TargetIn]
+
+
 class ReplyEventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

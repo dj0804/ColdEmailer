@@ -11,15 +11,19 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Application, EmailDraft, NudgeHistory
+from ..models import Application, Contact, EmailDraft, NudgeHistory
 from . import gmail, rate_limit
 
 
 class NotApproved(Exception):
     pass
+
+
+class DuplicateContact(Exception):
+    """Raised when a cold email would go to someone already contacted."""
 
 
 def _now() -> datetime:
@@ -45,6 +49,30 @@ def send_approved_draft(db: Session, draft_id: int) -> dict:
     app: Application = db.get(Application, draft.application_id)
     if app is None:
         raise ValueError(f"Application {draft.application_id} not found")
+
+    # --- Duplicate-contact guard ---------------------------------------------
+    # A fresh outreach must never go to someone we've already cold-emailed, even
+    # via a different Application row (duplicate company entries are easy to
+    # create). Nudges are exempt: they're replies on an existing thread.
+    if draft.type == "outreach" and app.contact_id:
+        contact = db.get(Contact, app.contact_id)
+        if contact and contact.email:
+            already = db.scalar(
+                select(EmailDraft.id)
+                .join(Application, EmailDraft.application_id == Application.id)
+                .join(Contact, Application.contact_id == Contact.id)
+                .where(
+                    func.lower(Contact.email) == contact.email.lower(),
+                    EmailDraft.type == "outreach",
+                    EmailDraft.status == "sent",
+                    EmailDraft.id != draft.id,
+                )
+            )
+            if already:
+                raise DuplicateContact(
+                    f"{contact.email} already received outreach (draft {already}). "
+                    "Refusing to send a duplicate cold email."
+                )
     contact = app.contact
     if contact is None or not contact.email:
         raise ValueError(

@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Kept past nudge2 so the second nudge has time to land.
     nudge_dead_business_days: int = 30
     ghost_check_hour: int = 8  # daily ghosting sweep, UTC hour
+
+    # Daily outreach routine: works through the company queue on weekdays,
+    # staging drafts for approval. It NEVER sends — approval is still required.
+    outreach_enabled: bool = False
+    outreach_per_day: int = 5
+    outreach_hour: int = 3  # UTC (03:00 UTC = 08:30 IST)
     database_url: str = "sqlite:///./applier.db"
 
 
