@@ -11,6 +11,7 @@ from .db import SessionLocal
 from .models import Application, Contact, EmailDraft, ReplyEvent
 from .services import classify, drafting, gmail, nudge, queueing
 from .services.discovery import chain as discovery_chain
+from .services.discovery import quota as discovery_quota
 
 # Stages we stop polling (definitive outcomes).
 TERMINAL_STAGES = {"rejection", "ghosted_dead", "duplicate_suppressed"}
@@ -140,6 +141,18 @@ def daily_outreach(limit: int | None = None) -> dict:
                     summary["errors"].append(f"{company.name}: discovery {e}"[:160])
                     continue
                 if found is None:
+                    # Distinguish "genuinely unfindable" from "our metered
+                    # provider is out of quota". Marking the latter as skipped
+                    # would silently burn good companies that would resolve fine
+                    # once the quota resets, so leave them queued and stop the
+                    # batch rather than churning the whole list for nothing.
+                    if discovery_quota.is_exhausted("hunter"):
+                        summary["deferred"] = summary.get("deferred", 0) + 1
+                        summary["companies"].append(
+                            {"company": company.name, "result": "deferred_quota"}
+                        )
+                        db.commit()
+                        break
                     company.queue_status = "skipped"
                     company.notes = ((company.notes or "") + " | no contact found").strip()
                     db.commit()
