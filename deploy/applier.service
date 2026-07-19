@@ -1,0 +1,27 @@
+[Unit]
+Description=Applier (FastAPI + APScheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/applier/backend
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONUTF8=1
+ExecStart=/home/ubuntu/applier/backend/.venv/bin/python -m uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+# Bind to localhost only: Cloudflare Tunnel reaches it from the same host, so
+# nothing is exposed to the internet even if the firewall were misconfigured.
+
+# Modest hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

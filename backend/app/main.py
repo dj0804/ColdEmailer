@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import Base, engine
@@ -73,3 +76,11 @@ app.include_router(dashboard_router.router)
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# Serve the built React dashboard (frontend/dist) when present, so a deployment
+# needs no separate web server. Built locally and uploaded — a 512MB box can't
+# comfortably run `npm build`. Mounted last so /api/* routes always win.
+_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="dashboard")

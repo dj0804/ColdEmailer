@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Daily outreach routine: works through the company queue on weekdays,
     # staging drafts for approval. It NEVER sends — approval is still required.
     outreach_enabled: bool = False
-    outreach_per_day: int = 5
+    outreach_per_day: int = 10
     outreach_hour: int = 3  # UTC (03:00 UTC = 08:30 IST)
     database_url: str = "sqlite:///./applier.db"
 
