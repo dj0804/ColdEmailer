@@ -1,13 +1,14 @@
 """One aggregated endpoint powering the dashboard table."""
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import models
 from ..config import settings
 from ..db import get_db
 from ..services import nudge, rate_limit
+from ..services.discovery import quota
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -82,4 +83,11 @@ def dashboard(db: Session = Depends(get_db)):
         "sends_today": rate_limit.sends_today(db),
         "daily_cap": settings.daily_send_cap,
         "pending_count": sum(len(r["pending_drafts"]) for r in rows),
+        "queue_remaining": db.scalar(
+            select(func.count(models.Company.id)).where(
+                models.Company.queue_status == "queued"
+            )
+        )
+        or 0,
+        "api_quota": quota.status(),
     }

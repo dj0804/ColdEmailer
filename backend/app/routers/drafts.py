@@ -75,6 +75,14 @@ def _approve_and_send(db: Session, draft: models.EmailDraft) -> schemas.SendResu
         raise HTTPException(status_code=429, detail=str(e))
     except send.NotApproved as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except send.DuplicateContact as e:
+        # Mark it so the dashboard stops offering it and the queue moves on.
+        draft.status = "rejected"
+        draft.approved_at = None
+        if draft.application and draft.application.stage == "draft":
+            draft.application.stage = "duplicate_suppressed"
+        db.commit()
+        raise HTTPException(status_code=409, detail=str(e))
     return schemas.SendResult(**result)
 
 

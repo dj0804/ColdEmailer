@@ -28,3 +28,5 @@ Thumbs.db
 # Local tooling
 .claude/
 CLAUDE.md
+quota_state.json
+backend/quota_state.json

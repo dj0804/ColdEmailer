@@ -7,13 +7,41 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..db import get_db
 from ..services.discovery import chain
+from ..services.queueing import normalize_domain
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 
 @router.post("", response_model=schemas.CompanyOut)
 def create_company(payload: schemas.CompanyCreate, db: Session = Depends(get_db)):
-    company = models.Company(**payload.model_dump())
+    """Idempotent: an existing company with the same domain (or name) is returned
+    as-is rather than duplicated.
+
+    Creating a second row for a company you've already contacted is how the same
+    person ends up emailed twice, so this must not create blindly.
+    """
+    data = payload.model_dump()
+    data["domain"] = normalize_domain(data.get("domain"))
+
+    existing = None
+    if data["domain"]:
+        existing = db.scalar(
+            select(models.Company).where(models.Company.domain == data["domain"])
+        )
+    if existing is None:
+        existing = db.scalar(
+            select(models.Company).where(models.Company.name == data["name"])
+        )
+    if existing is not None:
+        # Fill in blanks from the payload, but never clobber existing values.
+        for field in ("domain", "careers_url", "notes", "target_role"):
+            if not getattr(existing, field, None) and data.get(field):
+                setattr(existing, field, data[field])
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    company = models.Company(**data)
     db.add(company)
     db.commit()
     db.refresh(company)

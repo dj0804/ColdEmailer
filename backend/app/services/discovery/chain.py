@@ -52,6 +52,8 @@ def discover_contact(
     """Run the strategy chain and return the best contact found, or None."""
 
     # --- Strategy 1: Hunter.io domain search ---
+    # Returns [] immediately when the key is missing or the monthly quota is
+    # known-spent, so we fall through to the free tiers without wasting a call.
     hunter_hits = hunter.domain_search(domain)
     if hunter_hits:
         # Rank by preferred title, then confidence.
@@ -91,12 +93,15 @@ def discover_contact(
         ):
             result = verify.verify(candidate)
             if result.deliverable:
+                # An MX-only check proves the domain accepts mail, not that the
+                # mailbox exists — don't claim 'verified' on that basis.
+                mx_only = result.status == "mx_ok"
                 return DiscoveredContact(
                     email=candidate,
                     name=" ".join(p for p in [person_first, person_last] if p),
                     title=None,
                     source="pattern_verified",
-                    verified=True,
+                    verified=not mx_only,
                     confidence=result.score,
                     detail=f"verifier: {result.status}",
                 )

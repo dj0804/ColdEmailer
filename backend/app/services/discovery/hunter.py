@@ -10,13 +10,31 @@ from __future__ import annotations
 import httpx
 
 from ...config import settings
+from . import quota
 
 BASE = "https://api.hunter.io/v2"
+PROVIDER = "hunter"
+
+# Hunter signals an exhausted plan with 429, and sometimes 403 on hard limits.
+_QUOTA_CODES = {429, 403}
+
+
+def available() -> bool:
+    """False when no key is configured or the monthly quota is known-dry."""
+    return bool(settings.hunter_api_key) and not quota.is_exhausted(PROVIDER)
+
+
+def _check_quota(r: httpx.Response) -> bool:
+    """Record exhaustion. Returns True if the response was a quota error."""
+    if r.status_code in _QUOTA_CODES:
+        quota.mark_exhausted(PROVIDER)
+        return True
+    return False
 
 
 def domain_search(domain: str, limit: int = 10) -> list[dict]:
     """Return candidate contacts for a domain, best (highest confidence) first."""
-    if not settings.hunter_api_key:
+    if not available():
         return []
     try:
         r = httpx.get(
@@ -28,6 +46,8 @@ def domain_search(domain: str, limit: int = 10) -> list[dict]:
             },
             timeout=20,
         )
+        if _check_quota(r):
+            return []
         r.raise_for_status()
         emails = r.json().get("data", {}).get("emails", [])
     except (httpx.HTTPError, ValueError):
@@ -53,7 +73,7 @@ def domain_search(domain: str, limit: int = 10) -> list[dict]:
 
 def email_finder(domain: str, first_name: str, last_name: str) -> dict | None:
     """Find a specific person's email at a domain. Returns dict or None."""
-    if not settings.hunter_api_key:
+    if not available():
         return None
     try:
         r = httpx.get(
@@ -66,6 +86,8 @@ def email_finder(domain: str, first_name: str, last_name: str) -> dict | None:
             },
             timeout=20,
         )
+        if _check_quota(r):
+            return None
         r.raise_for_status()
         data = r.json().get("data", {})
     except (httpx.HTTPError, ValueError):
