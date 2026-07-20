@@ -30,3 +30,5 @@ Thumbs.db
 CLAUDE.md
 quota_state.json
 backend/quota_state.json
+job_runs.json
+backend/job_runs.json

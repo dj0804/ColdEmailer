@@ -4,11 +4,41 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from .. import jobs, models, schemas
 from ..db import get_db
-from ..services import queueing
+from ..services import job_log, queueing
 
 router = APIRouter(prefix="/api", tags=["jobs"])
+
+
+@router.get("/jobs/status")
+def jobs_status():
+    """Are the scheduled jobs alive, when do they next fire, what happened last?
+
+    Answers "did the pipeline run today?" without SSH access to the logs.
+    """
+    from ..main import scheduler  # imported lazily to avoid a circular import
+
+    now = datetime.now(timezone.utc)
+    jobs = []
+    for j in scheduler.get_jobs():
+        nxt = getattr(j, "next_run_time", None)
+        jobs.append(
+            {
+                "id": j.id,
+                "trigger": str(j.trigger),
+                "next_run": nxt.isoformat(timespec="seconds") if nxt else None,
+                "in_seconds": int((nxt - now).total_seconds()) if nxt else None,
+            }
+        )
+    return {
+        "scheduler_running": scheduler.running,
+        "now_utc": now.isoformat(timespec="seconds"),
+        "jobs": jobs,
+        "last_runs": job_log.status(),
+    }
 
 
 @router.post("/jobs/poll-replies")

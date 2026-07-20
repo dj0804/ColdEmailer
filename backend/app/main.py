@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -7,6 +8,32 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import Base, engine
 from .jobs import check_ghosting, daily_outreach, poll_replies
+from .services import job_log
+
+# APScheduler is silent by default, which makes "did the job run?" unanswerable
+# from the logs. INFO gives us an execution line per run in journalctl.
+logging.getLogger("apscheduler").setLevel(logging.INFO)
+_log = logging.getLogger("applier.jobs")
+_log.setLevel(logging.INFO)
+
+
+def _tracked(job_id: str, fn):
+    """Run a job, logging and persisting its outcome either way."""
+
+    def wrapper():
+        _log.info("job %s starting", job_id)
+        try:
+            result = fn()
+        except Exception as e:  # noqa: BLE001 - never let a job kill the scheduler
+            _log.exception("job %s FAILED", job_id)
+            job_log.record(job_id, error=f"{type(e).__name__}: {e}")
+            return None
+        _log.info("job %s finished: %s", job_id, result)
+        job_log.record(job_id, result=result if isinstance(result, dict) else None)
+        return result
+
+    wrapper.__name__ = f"tracked_{job_id}"
+    return wrapper
 from .routers import applications as applications_router
 from .routers import companies as companies_router
 from .routers import dashboard as dashboard_router
@@ -25,7 +52,7 @@ def startup() -> None:
     Base.metadata.create_all(bind=engine)
 
     scheduler.add_job(
-        poll_replies,
+        _tracked("poll_replies", poll_replies),
         "interval",
         minutes=settings.reply_poll_minutes,
         id="poll_replies",
@@ -34,7 +61,7 @@ def startup() -> None:
         coalesce=True,
     )
     scheduler.add_job(
-        check_ghosting,
+        _tracked("check_ghosting", check_ghosting),
         "cron",
         hour=settings.ghost_check_hour,
         id="check_ghosting",
@@ -45,7 +72,7 @@ def startup() -> None:
     if settings.outreach_enabled:
         # Weekdays only — cold email sent over a weekend just gets buried.
         scheduler.add_job(
-            daily_outreach,
+            _tracked("daily_outreach", daily_outreach),
             "cron",
             day_of_week="mon-fri",
             hour=settings.outreach_hour,
