@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import DraftReview from './DraftReview'
+import AddContact from './AddContact'
 
 const STAGE_STYLE = {
   draft: ['#eef2f7', '#475569'],
@@ -95,6 +96,8 @@ export default function App() {
           {error}
         </div>
       )}
+
+      <AddContact onDrafted={load} />
 
       {!data ? (
         <p style={{ color: 'var(--muted)' }}>Loading…</p>

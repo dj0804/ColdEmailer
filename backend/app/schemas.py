@@ -121,6 +121,18 @@ class BulkTargets(BaseModel):
     targets: list[TargetIn]
 
 
+class ManualContact(BaseModel):
+    """Add a contact you found yourself and draft outreach in one step."""
+
+    company_name: str
+    domain: str | None = None
+    contact_name: str
+    email: str
+    title: str | None = None
+    target_role: str | None = None
+    resume_variant: str | None = None  # inferred from target_role when omitted
+
+
 class ReplyEventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

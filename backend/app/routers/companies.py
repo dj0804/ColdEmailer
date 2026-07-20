@@ -48,6 +48,68 @@ def create_company(payload: schemas.CompanyCreate, db: Session = Depends(get_db)
     return company
 
 
+@router.post("/manual-contact", response_model=schemas.DraftOut)
+def manual_contact(payload: schemas.ManualContact, db: Session = Depends(get_db)):
+    """Add a hand-picked contact and immediately draft outreach to them.
+
+    For contacts you sourced yourself — no discovery API involved, so this works
+    regardless of quota, and you get to choose a better target than an automated
+    search would. The draft still lands in the approval queue like any other.
+    """
+    from ..services import drafting, queueing
+
+    email = payload.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="That doesn't look like an email")
+
+    domain = queueing.normalize_domain(payload.domain) or email.split("@", 1)[1]
+
+    company = db.scalar(select(models.Company).where(models.Company.domain == domain))
+    if company is None:
+        company = db.scalar(
+            select(models.Company).where(models.Company.name == payload.company_name)
+        )
+    if company is None:
+        company = models.Company(
+            name=payload.company_name,
+            domain=domain,
+            target_role=payload.target_role,
+            queue_status="done",  # handled manually, keep it out of the auto queue
+        )
+        db.add(company)
+        db.commit()
+        db.refresh(company)
+
+    # Reuse the contact if this address is already on file for the company.
+    contact = db.scalar(
+        select(models.Contact).where(
+            models.Contact.company_id == company.id, models.Contact.email == email
+        )
+    )
+    if contact is None:
+        contact = models.Contact(
+            company_id=company.id,
+            name=payload.contact_name,
+            email=email,
+            title=payload.title,
+            source="manual",
+            verified=True,  # a human picked it, which beats any automated guess
+        )
+        db.add(contact)
+        db.commit()
+        db.refresh(contact)
+
+    role = payload.target_role or company.target_role or "6-month internship"
+    variant = payload.resume_variant or queueing.infer_variant(role)
+    app = drafting.ensure_application(db, company.id, role, contact.id, variant)
+
+    try:
+        draft = drafting.generate_draft_for_application(db, app)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return draft
+
+
 @router.get("", response_model=list[schemas.CompanyOut])
 def list_companies(db: Session = Depends(get_db)):
     return db.scalars(select(models.Company).order_by(models.Company.id)).all()

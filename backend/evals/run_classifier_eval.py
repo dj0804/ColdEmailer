@@ -76,7 +76,7 @@ def main() -> None:
     ap.add_argument("--repeat", type=int, default=1, help="runs, to gauge variance")
     args = ap.parse_args()
 
-    cases = json.loads(CASES_FILE.read_text(encoding="utf-8"))["cases"]
+    cases = [c for c in json.loads(CASES_FILE.read_text(encoding="utf-8"))["cases"] if "label" in c]
     bad = [c for c in cases if c["label"] not in LABELS]
     if bad:
         raise SystemExit(f"Bad gold labels in eval set: {[c['id'] for c in bad]}")

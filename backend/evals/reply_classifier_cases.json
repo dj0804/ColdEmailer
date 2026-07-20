@@ -33,6 +33,14 @@
     {"id": 27, "label": "other",             "from": "auto@parental.leave",   "text": "I'm on parental leave until March and not checking email. Please reach out to the team alias instead."},
     {"id": 28, "label": "other",             "from": "spam@crypto-deals.biz", "text": "Congratulations! You have been selected for an exclusive investment opportunity. Claim your bonus now before it expires!"},
     {"id": 29, "label": "other",             "from": "postmaster@corp.com",   "text": "Delivery delayed. The server for the recipient domain is unreachable. The system will keep trying for 24 more hours."},
-    {"id": 30, "label": "other",             "from": "hr@company.com",        "text": "Received."}
+    {"id": 30, "label": "other",             "from": "hr@company.com",        "text": "Received."},
+
+    {"_group": "constraint-not-refusal — real replies that were misfiled as rejections"},
+    {"id": 31, "label": "recruiter_reply",   "from": "vijay@infilect.com",    "text": "Our internships are in person. Regards, Vijay Gabale, Co-Founder, Investor Relations, NA Business Development Infilect Technologies India / Infilect Inc USA (Computer Vision For CPG Retail) https://www.infilect.com"},
+    {"id": 32, "label": "recruiter_reply",   "from": "hiring@example.com",    "text": "We only offer internships of 6 months minimum, on-site in Bangalore."},
+    {"id": 33, "label": "recruiter_reply",   "from": "talent@example.com",    "text": "All our intern hiring goes through the university placement process — check with your college's placement cell."},
+    {"id": 34, "label": "recruiter_reply",   "from": "eng@example.com",       "text": "We typically only take interns who can start in January. Let me know if that works for you."},
+    {"id": 35, "label": "recruiter_reply",   "from": "founder@example.com",   "text": "Please send your CV to hiring@example.com rather than me."},
+    {"id": 36, "label": "rejection",         "from": "hr@example.com",        "text": "We are not hiring interns at the moment, sorry."}
   ]
 }

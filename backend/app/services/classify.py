@@ -23,11 +23,24 @@ book a slot.
 an interview — asks for more info, forwards internally, points to a job posting, \
 asks the candidate to apply/send details, or gives an encouraging "we'll keep you \
 in mind".
-- "rejection": a decline — not hiring, no fit, no interns right now, or an explicit \
-no.
+- "rejection": an explicit decline — "we're not hiring interns", "not a fit", \
+"we've filled the role", "pursuing other candidates", or a clear no.
 - "other": anything that isn't a real personal reply — automated out-of-office/\
 vacation autoreplies, delivery-failure/bounce notices, unrelated mail, newsletters, \
 spam, or read receipts.
+
+CRITICAL — do not infer a rejection that wasn't stated. A sender who replies \
+with a CONDITION or REQUIREMENT rather than a refusal is engaging, so that is \
+"recruiter_reply", NOT "rejection". Examples that are recruiter_reply:
+- "Our internships are in person." (a constraint the candidate may well meet)
+- "We only take interns for 6-month durations."
+- "Hiring runs through campus placements / our careers portal."
+- "We consider interns who can start in January."
+- "Send your CV to X" / "speak to Y instead".
+Classify "rejection" ONLY when the sender actually declines. If you are weighing \
+rejection against recruiter_reply and the message contains no explicit "no", \
+choose recruiter_reply — a real opportunity wrongly closed costs far more than \
+one kept open.
 
 Return ONLY JSON: {"label": "<one of the four>", "reason": "<short reason>"}."""
 
