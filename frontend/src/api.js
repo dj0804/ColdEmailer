@@ -24,6 +24,8 @@ export const api = {
   discover: (companyId) => req(`/api/companies/${companyId}/discover`, { method: 'POST', body: '{}' }),
   manualContact: (body) =>
     req('/api/companies/manual-contact', { method: 'POST', body: JSON.stringify(body) }),
+  quickSend: (body) =>
+    req('/api/companies/quick-send', { method: 'POST', body: JSON.stringify(body) }),
   jobsStatus: () => req('/api/jobs/status'),
   pollReplies: () => req('/api/jobs/poll-replies', { method: 'POST' }),
   checkGhosting: () => req('/api/jobs/check-ghosting', { method: 'POST' }),

@@ -48,6 +48,96 @@ def create_company(payload: schemas.CompanyCreate, db: Session = Depends(get_db)
     return company
 
 
+@router.post("/quick-send")
+def quick_send(payload: schemas.QuickSend, db: Session = Depends(get_db)):
+    """Draft (and by default send) to a raw email — no queue, no Hunter.
+
+    A nameless role inbox gets the eager generic template; a named contact gets
+    the personalised one. When send_now is true this sends immediately: supplying
+    the address here IS the explicit per-email approval, recorded on the draft.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    from ..services import drafting, personalize, queueing, rate_limit, send
+
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email.split("@")[1]:
+        raise HTTPException(status_code=400, detail="That doesn't look like an email")
+
+    domain = queueing.normalize_domain(payload.domain) or email.split("@", 1)[1]
+    company_name = payload.company_name or domain.split(".")[0].capitalize()
+
+    company = db.scalar(select(models.Company).where(models.Company.domain == domain))
+    if company is None:
+        company = models.Company(
+            name=company_name, domain=domain, target_role=payload.target_role,
+            queue_status="done",
+        )
+        db.add(company)
+        db.commit()
+        db.refresh(company)
+
+    contact = db.scalar(
+        select(models.Contact).where(
+            models.Contact.company_id == company.id, models.Contact.email == email
+        )
+    )
+    if contact is None:
+        contact = models.Contact(
+            company_id=company.id, name=payload.contact_name, email=email,
+            title=None, source="manual", verified=True,
+        )
+        db.add(contact)
+        db.commit()
+        db.refresh(contact)
+
+    role = payload.target_role or company.target_role or "6-month internship"
+    variant = payload.resume_variant or queueing.infer_variant(role)
+    app = drafting.ensure_application(db, company.id, role, contact.id, variant)
+
+    try:
+        if payload.contact_name:
+            result = personalize.generate_outreach(
+                company_name=company.name, company_domain=company.domain,
+                company_notes=company.notes, recipient_name=payload.contact_name,
+                recipient_title=None, role=role, resume_variant=variant,
+            )
+        else:
+            result = personalize.generate_generic_outreach(
+                company_name=company.name, company_domain=company.domain,
+                company_notes=company.notes, role=role, resume_variant=variant,
+            )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    draft = models.EmailDraft(
+        application_id=app.id, type="outreach", subject=result["subject"],
+        body=result["body"],
+        attachment_paths=json.dumps(drafting.default_attachments(variant)),
+        status="pending",
+    )
+    db.add(draft)
+    app.stage = "pending_approval"
+    db.commit()
+    db.refresh(draft)
+
+    if not payload.send_now:
+        return {"draft_id": draft.id, "sent": False, "subject": draft.subject,
+                "body": draft.body, "to": email}
+
+    draft.status = "approved"
+    draft.approved_at = datetime.now(timezone.utc)
+    db.commit()
+    try:
+        res = send.send_approved_draft(db, draft.id)
+    except send.DuplicateContact as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except rate_limit.RateLimitExceeded as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    return {"sent": True, "subject": draft.subject, "body": draft.body, **res}
+
+
 @router.post("/manual-contact", response_model=schemas.DraftOut)
 def manual_contact(payload: schemas.ManualContact, db: Session = Depends(get_db)):
     """Add a hand-picked contact and immediately draft outreach to them.

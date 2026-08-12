@@ -180,6 +180,127 @@ def generate_nudge(
     raise ValueError(f"LLM failed to produce a valid nudge after 3 tries: {last_err}")
 
 
+GENERIC_SYSTEM = """You write a short, warm cold email to a company's shared \
+inbox (careers@/hr@/info@) for a CS student seeking a 6-month internship. There is \
+NO named recipient, so it greets the team generically — but it must still feel like \
+a real, eager person wrote it, not a mass-blast.
+
+Follow the candidate's own voice and structure closely:
+
+  Hello,
+
+  I'll keep this short.
+
+  I'm Dev, a {{year}} at {{school}}. I've been following {{company}}'s work on \
+{{specific_area}}, and I'd be genuinely excited to contribute there.
+
+  Over the past year I've built ML systems across internships at {{prior}} — \
+spanning recommendation engines, computer vision, and scalable AI pipelines. I'm \
+looking for a 6-month internship — {{availability}}.
+
+  {{eager_ask}}
+
+  I've attached my resume. If there's a fit — on your team or any other — I'd \
+really appreciate the chance to talk, and I'm happy to do a short task or trial to \
+show what I can bring.
+
+  Either way, thanks for reading — I appreciate it.
+
+  Cheers,
+  Dev Jain
+
+Rules:
+- 130-170 words. Keep the candidate's phrases ("I'll keep this short.", "Either \
+way, thanks for reading — I appreciate it.", "Cheers,").
+- {{specific_area}} must be a CONCRETE, TRUE thing the company does, from the \
+provided context or an accurate description of their domain — never vague filler, \
+never invented.
+- {{eager_ask}}: one or two sentences that clearly, warmly ask to be considered for \
+a 6-month internship and to be pointed to the right person if this isn't the inbox \
+for it — show initiative and persistence without being pushy. A light nod to \
+full-time conversion is fine.
+- Convey real eagerness and willingness to prove himself; do NOT grovel or overclaim.
+- Do not invent a name or pretend to know a specific person.
+- End with the exact contact line provided under "Dev Jain".
+
+Return ONLY JSON: {"subject": "...", "body": "..."}. Subject is short and specific \
+(e.g. "6-month internship — final-year CS student, keen to join {{company}}")."""
+
+GENERIC_USER = """Write the generic-inbox email for this company.
+
+CANDIDATE FACTS (use exactly):
+{year} at {school}; prior internships: {prior}; {availability}
+Sign-off contact line (verbatim under "Dev Jain"):
+{email} | {phone}
+{links}
+
+TARGET COMPANY: {company}
+ROLE THE CANDIDATE WANTS: {role}
+
+COMPANY CONTEXT (scraped; may be empty — if empty, describe their domain \
+accurately and invent nothing):
+{company_context}
+
+Resume (for grounding the credibility line):
+{resume}
+
+Return only the JSON object."""
+
+
+def generate_generic_outreach(
+    *,
+    company_name: str,
+    company_domain: str | None,
+    company_notes: str | None,
+    role: str,
+    resume_variant: str | None = None,
+) -> dict:
+    """Eager, name-free outreach for a role inbox (careers@/hr@). No recipient."""
+    company_context = ""
+    if company_domain:
+        try:
+            company_context = scraper.fetch_context_text(company_domain)
+        except Exception:  # noqa: BLE001
+            company_context = ""
+    if company_notes:
+        company_context = f"{company_notes}\n{company_context}".strip()
+
+    user = GENERIC_USER.format(
+        year=settings.candidate_year,
+        school=settings.candidate_school,
+        prior=settings.candidate_prior,
+        availability=settings.candidate_availability,
+        email=settings.candidate_email,
+        phone=settings.candidate_phone,
+        links=settings.candidate_links,
+        company=company_name,
+        role=role,
+        company_context=company_context or "(none available)",
+        resume=resume_text(resume_variant),
+    )
+    last_err: Exception | None = None
+    for _ in range(3):
+        raw = llm.chat(
+            model=settings.openai_draft_model,
+            system=GENERIC_SYSTEM,
+            user=user,
+            max_tokens=6000,
+            temperature=0.8,
+            reasoning_effort="low",
+            json_mode=True,
+        )
+        try:
+            data = _extract_json(raw)
+            subject = (data.get("subject") or "").strip()
+            body = (data.get("body") or "").strip()
+            if subject and body:
+                return {"subject": subject, "body": body}
+            last_err = ValueError(f"incomplete: {raw[:120]!r}")
+        except (ValueError, KeyError) as e:
+            last_err = e
+    raise ValueError(f"LLM failed to produce a generic draft after 3 tries: {last_err}")
+
+
 def _extract_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):

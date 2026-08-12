@@ -121,6 +121,23 @@ class BulkTargets(BaseModel):
     targets: list[TargetIn]
 
 
+class QuickSend(BaseModel):
+    """Draft-and-send to a raw email in one step, bypassing the queue and Hunter.
+
+    For addresses you supply directly — including nameless role inboxes
+    (careers@/hr@), which get an eager, generic draft. Set send_now=False to
+    stage for approval instead of sending immediately.
+    """
+
+    email: str
+    company_name: str | None = None  # inferred from the domain if omitted
+    domain: str | None = None
+    contact_name: str | None = None  # if given, a personalised draft is used
+    target_role: str | None = None
+    resume_variant: str | None = None
+    send_now: bool = True
+
+
 class ManualContact(BaseModel):
     """Add a contact you found yourself and draft outreach in one step."""
 

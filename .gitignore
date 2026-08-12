@@ -32,3 +32,7 @@ quota_state.json
 backend/quota_state.json
 job_runs.json
 backend/job_runs.json
+token.json.dead
+backend/token.json.dead
+token.json*
+backend/token.json*

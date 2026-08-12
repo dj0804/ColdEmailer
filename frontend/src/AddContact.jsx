@@ -17,21 +17,31 @@ export default function AddContact({ onDrafted }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
+  const [sendNow, setSendNow] = useState(false)
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
-  const ready = f.company_name.trim() && f.contact_name.trim() && f.email.includes('@')
+  // Send-now works with just an email (nameless role inboxes get a generic draft).
+  const ready = f.email.includes('@') && (sendNow || (f.company_name.trim() && f.contact_name.trim()))
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true); setError(null); setDone(null)
     try {
-      const draft = await api.manualContact({
+      const common = {
         ...f,
         domain: f.domain || null,
         title: f.title || null,
         target_role: f.target_role || null,
-      })
-      setDone(draft)
+        contact_name: f.contact_name || null,
+        company_name: f.company_name || null,
+      }
+      if (sendNow) {
+        const res = await api.quickSend({ ...common, send_now: true })
+        setDone({ sent: true, to: res.to })
+      } else {
+        const draft = await api.manualContact(common)
+        setDone({ id: draft.id })
+      }
       setF(BLANK)
       onDrafted?.()
     } catch (err) {
@@ -75,7 +85,9 @@ export default function AddContact({ onDrafted }) {
           background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0',
           borderRadius: 8, padding: '8px 10px', marginBottom: 12, fontSize: 13,
         }}>
-          Draft #{done.id} created — review it in the table below.
+          {done.sent
+            ? `Sent to ${done.to}.`
+            : `Draft #${done.id} created — review it in the table below.`}
         </div>
       )}
 
@@ -94,12 +106,19 @@ export default function AddContact({ onDrafted }) {
           <Field label="Target role" value={f.target_role} onChange={set('target_role')}
             placeholder="Computer Vision Intern (picks the resume)" />
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <input type="checkbox" checked={sendNow} style={{ width: 'auto' }}
+            onChange={(e) => setSendNow(e.target.checked)} />
+          Send immediately (skip approval) — for role inboxes like careers@/hr@; a
+          name isn’t required and a generic eager email is used.
+        </label>
         <div>
           <button className="primary" type="submit" disabled={!ready || busy}>
-            {busy ? 'Drafting…' : 'Add & draft outreach'}
+            {busy ? (sendNow ? 'Sending…' : 'Drafting…')
+                  : (sendNow ? 'Draft & send now' : 'Add & draft outreach')}
           </button>
           <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>
-            Nothing sends until you approve it.
+            {sendNow ? 'This sends the email right away.' : 'Nothing sends until you approve it.'}
           </span>
         </div>
       </form>
