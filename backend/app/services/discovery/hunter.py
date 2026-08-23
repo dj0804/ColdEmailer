@@ -24,10 +24,22 @@ def available() -> bool:
     return bool(settings.hunter_api_key) and not quota.is_exhausted(PROVIDER)
 
 
+def _reset_date() -> str | None:
+    """Hunter's real quota reset date (YYYY-MM-DD), or None if unavailable."""
+    try:
+        r = httpx.get(
+            f"{BASE}/account", params={"api_key": settings.hunter_api_key}, timeout=15
+        )
+        return r.json().get("data", {}).get("reset_date")
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 def _check_quota(r: httpx.Response) -> bool:
     """Record exhaustion. Returns True if the response was a quota error."""
     if r.status_code in _QUOTA_CODES:
-        quota.mark_exhausted(PROVIDER)
+        # Store Hunter's actual reset date so we don't defer past it (or before it).
+        quota.mark_exhausted(PROVIDER, until=_reset_date())
         return True
     return False
 
