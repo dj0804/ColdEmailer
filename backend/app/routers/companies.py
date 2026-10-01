@@ -100,8 +100,8 @@ def quick_send(payload: schemas.QuickSend, db: Session = Depends(get_db)):
         if payload.contact_name:
             result = personalize.generate_outreach(
                 company_name=company.name, company_domain=company.domain,
-                company_notes=company.notes, recipient_name=payload.contact_name,
-                recipient_title=None, role=role, resume_variant=variant,
+                company_notes=company.notes, role=role, resume_variant=variant,
+                greet_name=payload.contact_name,
             )
         else:
             result = personalize.generate_generic_outreach(

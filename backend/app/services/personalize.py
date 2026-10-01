@@ -1,9 +1,10 @@
-"""LLM-powered, humanized outreach drafting (per company AND per recipient).
+"""LLM-powered, humanized outreach drafting, personalized per company.
 
 Produces a distinct subject + body for each application. Personalization draws
 on: the candidate's resume, the specific company (name + scraped site context +
-notes), the specific recipient (name + title), and the role framing
-(6-month internship -> full-time conversion).
+notes), and the role framing (6-month internship -> full-time conversion). The
+recipient is deliberately not a personalization input: the email has to land with
+whoever handles hiring, whether that's a named recruiter or a careers@ inbox.
 """
 
 from __future__ import annotations
@@ -15,30 +16,34 @@ from . import llm
 from .discovery import scraper
 from .resume import resume_text
 
-SYSTEM = """You personalize a proven cold-outreach email for a CS student seeking a \
-6-month internship. The candidate already wrote the email he wants; your job is to \
-adapt it to ONE specific company and recipient — NOT to rewrite it in your own \
+SYSTEM = """You personalize a proven cold-outreach email for a CS student \
+seeking a 6-month internship. The candidate already wrote the email he wants; \
+your job is to adapt it to ONE specific company — NOT to rewrite it in your own \
 voice. Preserve his wording, rhythm, brevity, and humble tone. Fill the blanks; \
 do not editorialize or pad.
 
+Personalization is about the COMPANY, never the recipient. The email goes to \
+whoever handles hiring there (a recruiter, HR, a founder, or a shared careers \
+inbox), so it must read well to any of them. Do not guess at or reference the \
+reader's role, seniority, or team.
+
 This is the template and voice to follow closely:
 
-  Hi {{first_name}},
+  {{greeting}}
 
   I'll keep this short.
 
-  I'm Dev, a {{year}} at {{school}}. I've been following the work your team is \
-doing around {{specific_area}}, and it genuinely looks like the kind of \
-engineering environment I want to learn in.
+  I'm Dev, a {{year}} at {{school}}. I've been following {{company}}'s work on \
+{{specific_area}}, and {{why_it_matters}}.
 
   Over the past year I've worked on ML systems across internships at {{prior}} — \
-spanning recommendation engines, computer vision, and scalable AI pipelines. I'm \
-now looking for a 6-month internship — {{availability}}.
+spanning recommendation engines, computer vision, and scalable AI pipelines. \
+{{bridge}} I'm now looking for a 6-month internship — {{availability}}.
 
   {{specific_ask}}
 
-  I've attached my resume. If you think my profile could fit your team or another \
-team at {{company}}, I'd really appreciate the chance to chat.
+  I've attached my resume. If my profile could fit a team at {{company}}, I'd \
+really appreciate the chance to chat.
 
   Either way, thanks for reading — I appreciate it.
 
@@ -46,30 +51,35 @@ team at {{company}}, I'd really appreciate the chance to chat.
   Dev Jain
 
 Rules:
-- Keep it SHORT — roughly 130-160 words in the body, same paragraphing as above.
-- {{first_name}} = the recipient's first name.
-- {{specific_area}} is the make-or-break slot: it must be a CONCRETE thing this \
-company actually does — a real product, research direction, platform, or domain — \
-drawn only from the provided company context or the recipient's title. If the \
+- Keep it SHORT — roughly 130-170 words in the body, same paragraphing as above.
+- {{greeting}} = exactly the greeting line provided in the input.
+- {{specific_area}} is the make-or-break slot: a CONCRETE thing this company \
+actually does — a named product, platform, research direction, customer segment, \
+or engineering problem — drawn only from the provided company context. If the \
 context is thin, use a genuinely accurate description of the company's domain; \
-NEVER invent a product, launch, or detail you weren't given, and never write \
-vague filler like "your work in AI".
-- {{specific_ask}}: one or two sentences making a direct, specific ask for a \
-6-month internship on the recipient's team, and SUBTLY note openness to it \
-converting to a full-time role (a light touch like "with the hope it could grow \
-into something longer-term" — never pushy, never the main focus).
+NEVER invent a product, launch, metric, or detail you weren't given, and never \
+write vague filler like "your work in AI".
+- {{why_it_matters}}: a short clause on why that specific work appeals to him as \
+an engineer (e.g. the technical problem behind it). Grounded, not gushing.
+- {{bridge}}: at most one short sentence connecting his resume to what this \
+company builds, ONLY if there's a genuine overlap in the resume; otherwise leave \
+it empty.
+- {{specific_ask}}: one or two sentences directly asking to be considered for a \
+6-month internship at {{company}} — and, if this isn't the right person, to be \
+pointed to whoever is. SUBTLY note openness to it converting to full-time ("with \
+the hope it could grow into something longer-term") — never pushy.
 - Do NOT add new claims about the candidate beyond the resume. Do NOT invent a \
 shared connection or that he uses their product.
 - Keep the candidate's phrases ("I'll keep this short.", "Either way, thanks for \
-reading — I appreciate it.", "Cheers,"). You may lightly adjust the credibility \
-line to fit, but keep it brief and non-jargony.
+reading — I appreciate it.", "Cheers,").
 - End with the sign-off block using the exact contact line provided.
 
 Return ONLY a JSON object: {"subject": "...", "body": "..."}. Subject is short, \
-specific, low-hype (e.g. "6-month internship — final-year CS student at VIT"), \
-tailored to the company where natural. Body is the full email including sign-off."""
+specific, low-hype, and names the company (e.g. "6-month internship at \
+{{company}} — final-year CS student"). Body is the full email including \
+sign-off."""
 
-USER_TEMPLATE = """Fill the template for this specific recipient and company.
+USER_TEMPLATE = """Fill the template for this company.
 
 CANDIDATE FACTS (use these exactly):
 Name: {name}
@@ -80,15 +90,14 @@ Sign-off contact line (use verbatim under "Dev Jain"):
 {email} | {phone}
 {links}
 
-RECIPIENT:
-First name to greet: {recipient_name}
-Title: {recipient_title}
+GREETING LINE (use verbatim): {greeting}
 
 TARGET COMPANY: {company}
+ROLE THE CANDIDATE WANTS: {role}
 
-COMPANY CONTEXT (scraped from their own site; may be empty — if empty, describe \
-their domain accurately from the recipient's title and company name, and do NOT \
-invent specifics):
+COMPANY CONTEXT (scraped from their own site — homepage, about, product, \
+customer and engineering pages; may be empty — if empty, describe their domain \
+accurately from the company name and do NOT invent specifics):
 {company_context}
 
 Resume (for grounding the credibility line; do not copy jargon wholesale):
@@ -315,12 +324,16 @@ def generate_outreach(
     company_name: str,
     company_domain: str | None,
     company_notes: str | None,
-    recipient_name: str | None,
-    recipient_title: str | None,
     role: str,
     resume_variant: str | None = None,
+    greet_name: str | None = None,
 ) -> dict:
-    """Return {'subject': str, 'body': str} for a single personalized outreach email."""
+    """Return {'subject': str, 'body': str} for one company-personalized email.
+
+    Personalization is driven by the company alone. ``greet_name`` only changes the
+    greeting line, and is meant for names the user typed in themselves (quick-send)
+    — the automated pipeline deliberately leaves it unset.
+    """
     company_context = ""
     if company_domain:
         try:
@@ -341,8 +354,8 @@ def generate_outreach(
         prior=settings.candidate_prior,
         availability=settings.candidate_availability,
         company=company_name,
-        recipient_name=(recipient_name.split()[0] if recipient_name else "there"),
-        recipient_title=recipient_title or "(unknown title)",
+        role=role,
+        greeting=f"Hi {greet_name.split()[0]}," if greet_name else "Hi,",
         company_context=company_context or "(none available)",
     )
 

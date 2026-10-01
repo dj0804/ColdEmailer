@@ -21,7 +21,11 @@ _QUOTA_CODES = {429, 403}
 
 def available() -> bool:
     """False when no key is configured or the monthly quota is known-dry."""
-    return bool(settings.hunter_api_key) and not quota.is_exhausted(PROVIDER)
+    return (
+        settings.hunter_enabled
+        and bool(settings.hunter_api_key)
+        and not quota.is_exhausted(PROVIDER)
+    )
 
 
 def _reset_date() -> str | None:

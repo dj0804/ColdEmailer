@@ -146,7 +146,7 @@ def daily_outreach(limit: int | None = None) -> dict:
                     # would silently burn good companies that would resolve fine
                     # once the quota resets, so leave them queued and stop the
                     # batch rather than churning the whole list for nothing.
-                    if discovery_quota.is_exhausted("hunter"):
+                    if settings.hunter_enabled and discovery_quota.is_exhausted("hunter"):
                         summary["deferred"] = summary.get("deferred", 0) + 1
                         summary["companies"].append(
                             {"company": company.name, "result": "deferred_quota"}

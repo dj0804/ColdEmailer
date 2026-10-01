@@ -9,7 +9,7 @@ Hard rules (guardrails):
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -19,16 +19,21 @@ USER_AGENT = "ApplierBot/0.1 (personal job-search outreach)"
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
-# Candidate paths where contact/team emails commonly live.
+# Candidate paths where contact/team emails commonly live. Careers and contact
+# pages come first: that's where hiring inboxes are published, and the page
+# budget used to run out on team/about pages before ever reaching them.
 CANDIDATE_PATHS = [
     "",
+    "/careers",
+    "/contact",
+    "/contact-us",
+    "/jobs",
+    "/join-us",
     "/team",
     "/about",
     "/about-us",
     "/company",
     "/people",
-    "/contact",
-    "/careers",
 ]
 
 
@@ -48,16 +53,34 @@ def _same_company(url: str, domain: str) -> bool:
     return _registrable(host) == _registrable(domain)
 
 
+_robots_cache: dict[str, RobotFileParser | None] = {}
+
+
 def _robots_ok(url: str) -> bool:
+    """robots.txt check, fetched with a timeout and cached per host.
+
+    RobotFileParser.read() uses urllib with no timeout, so one unresponsive host
+    could hang a whole discovery batch indefinitely.
+    """
     parsed = urlparse(url)
-    robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-    rp = RobotFileParser()
-    try:
-        rp.set_url(robots_url)
-        rp.read()
-    except Exception:  # noqa: BLE001 - if robots is unreachable, be permissive
-        return True
-    return rp.can_fetch(USER_AGENT, url)
+    root = f"{parsed.scheme}://{parsed.netloc}"
+    if root not in _robots_cache:
+        rp: RobotFileParser | None = None
+        try:
+            r = httpx.get(
+                f"{root}/robots.txt",
+                headers={"User-Agent": USER_AGENT},
+                timeout=10,
+                follow_redirects=True,
+            )
+            if r.status_code == 200:
+                rp = RobotFileParser()
+                rp.parse(r.text.splitlines())
+        except httpx.HTTPError:
+            rp = None  # unreachable robots: be permissive, as before
+        _robots_cache[root] = rp
+    rp = _robots_cache[root]
+    return True if rp is None else rp.can_fetch(USER_AGENT, url)
 
 
 def _fetch(url: str) -> str | None:
@@ -75,8 +98,19 @@ def _fetch(url: str) -> str | None:
     return None
 
 
-def fetch_context_text(domain: str, max_chars: int = 2500) -> str:
-    """Fetch homepage + /about visible text as grounding for personalization.
+# Pages that say what a company actually builds, in rough order of usefulness for
+# writing a specific opening line. Missing pages just 404 and are skipped.
+CONTEXT_PATHS = [
+    "", "/about", "/about-us", "/company", "/product", "/products",
+    "/platform", "/solutions", "/customers", "/engineering", "/careers",
+]
+
+
+def fetch_context_text(domain: str, max_chars: int = 6000, per_page: int = 1500) -> str:
+    """Fetch visible text from homepage, about, product and careers pages.
+
+    Grounding for company-level personalization. Each page is capped at
+    ``per_page`` so one long homepage can't crowd out the product pages.
 
     Company-domain-only and robots-respecting, same as the email scraper. Returns
     a trimmed plain-text snippet ('' if nothing usable).
@@ -84,7 +118,7 @@ def fetch_context_text(domain: str, max_chars: int = 2500) -> str:
     base = domain if domain.startswith("http") else f"https://{domain}"
     root_host = urlparse(base).hostname or domain
     chunks: list[str] = []
-    for path in ("", "/about", "/about-us", "/company"):
+    for path in CONTEXT_PATHS:
         url = urljoin(base + "/", path.lstrip("/"))
         if not _same_company(url, root_host) or not _robots_ok(url):
             continue
@@ -95,8 +129,8 @@ def fetch_context_text(domain: str, max_chars: int = 2500) -> str:
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
         text = " ".join(soup.get_text(" ").split())
-        if text:
-            chunks.append(text)
+        if text and text[:200] not in "".join(chunks):  # skip redirects to home
+            chunks.append(f"[{path or '/'}] {text[:per_page]}")
         if sum(len(c) for c in chunks) >= max_chars:
             break
     return " ".join(chunks)[:max_chars]
@@ -112,7 +146,25 @@ ROLE_LOCALPARTS = {
     "billing", "accounts", "office", "enquiry", "enquiries", "inquiry",
     "noreply", "no-reply", "donotreply", "webmaster", "postmaster", "mail",
     "general", "partnerships", "partner", "business", "bd", "invest",
+    "talent", "people", "hiring", "recruiter", "recruiters", "humanresources",
+    "talentacquisition", "ta", "campus", "internship", "internships", "hrd",
+    "abuse", "compliance", "grievance", "dpo", "investors", "ir", "pr",
+    "customercare", "care", "feedback", "orders", "noreply", "newsletter",
 }
+
+# Role inboxes that reach whoever does hiring. These are the only shared inboxes
+# outreach should go to.
+HIRING_LOCALPARTS = {
+    "careers", "career", "jobs", "job", "hr", "hrd", "recruiting", "recruitment",
+    "recruiter", "recruiters", "talent", "people", "hiring", "humanresources",
+    "talentacquisition", "ta", "campus", "internship", "internships", "joinus",
+    "work", "workwithus",
+}
+# General inboxes a human reads and can forward. Acceptable only when the site
+# publishes no hiring inbox. Everything else (sales@, support@, privacy@, ...)
+# is never used for a job application.
+GENERAL_LOCALPARTS = {"info", "contact", "hello", "hi", "team", "office", "mail",
+                      "enquiry", "enquiries", "inquiry", "general"}
 
 # Job-title words used to spot a title sitting next to a name on a team page.
 _TITLE_HINT = re.compile(
@@ -152,8 +204,52 @@ def looks_like_person_name(text: str) -> bool:
     return not any(w in _NOT_NAME_WORDS for w in words)
 
 
+def _localpart(email: str) -> str:
+    return email.split("@", 1)[0].lower().strip(".").replace("-", "").replace("_", "")
+
+
 def is_role_address(email: str) -> bool:
-    return email.split("@", 1)[0].lower().strip(".") in ROLE_LOCALPARTS
+    lp = _localpart(email)
+    return lp in ROLE_LOCALPARTS or lp in HIRING_LOCALPARTS or lp in GENERAL_LOCALPARTS
+
+
+# Substrings that mark a hiring inbox even in compound local parts
+# (dsrecruitment@, talent.acquisition@, humancapital@, resume@).
+_HIRING_SUBSTRINGS = ("recruit", "career", "talent", "hiring", "resume",
+                      "humancapital", "humanresource", "joinus", "jobs")
+_HR_PREFIXES = ("hr.", "hr_", "hr-", "hrd", "hrops", "hroperations", "hrteam")
+# A published individual is only used when the site ties them to hiring.
+_HIRING_PAGES = ("/careers", "/jobs", "/join-us")
+_HIRING_TITLE = re.compile(r"\b(recruit\w*|talent|people|hr|human resources|hiring)\b", re.I)
+
+
+def inbox_kind(
+    email: str, page: str | None = None, title: str | None = None, name: str | None = None
+) -> str:
+    """Classify a scraped address for outreach.
+
+    'hiring'  - a hiring inbox (careers@, hr@, talent.acquisition@ ...)
+    'person'  - an individual the site ties to hiring (careers page / HR title)
+    'general' - a general inbox a human reads (info@, hello@, contact@)
+    'other'   - anything else: sales@, legal@, fraud@, or an individual with no
+                visible link to hiring. Never used for job outreach.
+    """
+    raw = email.split("@", 1)[0].lower()
+    lp = _localpart(email)
+    if (lp in HIRING_LOCALPARTS or raw.startswith(_HR_PREFIXES)
+            or any(s in lp for s in _HIRING_SUBSTRINGS)):
+        return "hiring"
+    if lp in GENERAL_LOCALPARTS:
+        return "general"
+    # Require a human name printed next to the address on the page. A name
+    # inferred from the local part is too weak: it turns investorrelations@ and
+    # accommodations@ into "people".
+    if is_role_address(email) or not name:
+        return "other"
+    on_hiring_page = bool(page) and urlparse(page).path.rstrip("/").endswith(_HIRING_PAGES)
+    if on_hiring_page or (title and _HIRING_TITLE.search(title)):
+        return "person"
+    return "other"
 
 
 def name_from_localpart(email: str) -> str | None:
@@ -234,7 +330,7 @@ def scrape_people(domain: str, max_pages: int = 4) -> list[dict]:
     return list(people.values())
 
 
-def scrape_emails(domain: str, max_pages: int = 6) -> list[dict]:
+def scrape_emails(domain: str, max_pages: int = 9) -> list[dict]:
     """Return emails found on the company's own team/about/contact pages.
 
     Each result: {email, name, title, page, is_role}. Emails are filtered to the
@@ -263,9 +359,11 @@ def scrape_emails(domain: str, max_pages: int = 6) -> list[dict]:
         # Prefer mailto: links — they carry DOM context we can read a name from.
         candidates: dict[str, tuple[str | None, str | None]] = {}
         for a in soup.select("a[href^=mailto]"):
-            addr = a.get("href", "").removeprefix("mailto:").split("?")[0].strip()
-            if addr:
-                candidates[addr] = _nearby_person(a)
+            # Pull the address out with the regex rather than prefix-stripping:
+            # real hrefs include 'MAILTO:', 'mailto:mailto:' and %-encoding.
+            m = EMAIL_RE.search(unquote(a.get("href", "")))
+            if m:
+                candidates[m.group(0)] = _nearby_person(a)
         for addr in EMAIL_RE.findall(soup.get_text(" ")):
             candidates.setdefault(addr, (None, None))
 
@@ -282,6 +380,7 @@ def scrape_emails(domain: str, max_pages: int = 6) -> list[dict]:
                     "title": dom_title,
                     "page": url,
                     "is_role": is_role_address(email),
+                    "kind": inbox_kind(email, url, dom_title, dom_name),
                 },
             )
 

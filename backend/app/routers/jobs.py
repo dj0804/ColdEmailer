@@ -1,5 +1,7 @@
 """Manual job triggers + reply-event inspection (Phase 4)."""
 
+import threading
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -54,9 +56,26 @@ def trigger_ghost_check():
 
 
 @router.post("/jobs/daily-outreach")
-def trigger_daily_outreach(limit: int | None = Query(default=None)):
-    """Work today's batch from the company queue. Stages drafts; never sends."""
-    return jobs.daily_outreach(limit=limit)
+def trigger_daily_outreach(
+    limit: int | None = Query(default=None),
+    background: bool = Query(default=False),
+):
+    """Work today's batch from the company queue. Stages drafts; never sends.
+
+    A full 50-company batch takes far longer than the tunnel's request timeout,
+    so ``background=true`` returns immediately; the outcome lands in job status.
+    """
+    if not background:
+        return jobs.daily_outreach(limit=limit)
+
+    def run():
+        try:
+            job_log.record("daily_outreach", result=jobs.daily_outreach(limit=limit))
+        except Exception as e:  # noqa: BLE001
+            job_log.record("daily_outreach", error=f"{type(e).__name__}: {e}")
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"started": True, "limit": limit}
 
 
 @router.post("/queue/bulk")

@@ -105,7 +105,7 @@ def discover_contact(
     except Exception:  # noqa: BLE001 - scraping is best-effort
         scraped = []
     for c in scraped:
-        if not c.get("is_role") and c.get("name"):
+        if c.get("kind") == "person" and c.get("name"):
             return _from_scraped_person(c)
 
     # --- Strategy 2 (free): name from the team page + guessed/verified address --
@@ -146,19 +146,21 @@ def discover_contact(
                 detail=f"hunter confidence {best.get('confidence')}",
             )
 
-    # --- Strategy 4 (last resort): a shared role inbox found while scraping ---
-    # Worse than everything above — nobody owns careers@, and the email can't be
-    # personalised to a person — but it beats not contacting the company at all.
-    for c in scraped:
-        if c.get("is_role"):
-            return DiscoveredContact(
-                email=c["email"],
-                name=None,
-                title=None,
-                source="scrape_generic",
-                verified=False,
-                detail=f"role inbox on {c.get('page')}",
-            )
+    # --- Strategy 4: a shared inbox published on their own site ---
+    # A hiring inbox (careers@/hr@/talent@) first; a general one (info@/hello@)
+    # only if no hiring inbox exists. sales@/support@/privacy@ etc. are never
+    # used — a job application there is noise to someone who can't act on it.
+    for kind in ("hiring", "general"):
+        for c in scraped:
+            if c.get("kind") == kind:
+                return DiscoveredContact(
+                    email=c["email"],
+                    name=None,
+                    title=None,
+                    source="scrape_generic",
+                    verified=False,
+                    detail=f"{kind} inbox on {c.get('page')}",
+                )
 
     return None
 

@@ -3,11 +3,11 @@
 Escalation ladder for an application still sitting at stage 'sent' (any reply moves
 it off 'sent', so 'sent' == silence):
 
-    day 10  -> stage a nudge1 draft   (pending approval — never auto-sent)
-    day 20  -> stage a nudge2 draft   (pending approval — never auto-sent)
-    day 30  -> mark stage 'ghosted_dead', stop nudging
+    day N1  -> stage a nudge1 draft   (pending approval — never auto-sent)
+    day N2  -> stage a nudge2 draft   (pending approval; skipped when N2 is 0)
+    day N3  -> mark stage 'ghosted_dead', stop nudging
 
-Thresholds are configurable. Drafts are only *staged*; the approval gate in
+Thresholds are configurable (NUDGE1/NUDGE2/NUDGE_DEAD_BUSINESS_DAYS). Drafts are only *staged*; the approval gate in
 send.send_approved_draft remains the only way anything leaves the outbox.
 """
 
@@ -81,7 +81,7 @@ def _create_nudge_draft(
     result = personalize.generate_nudge(
         nudge_number=number,
         company_name=company.name,
-        recipient_name=app.contact.name if app.contact else None,
+        recipient_name=None,
         recipient_title=app.contact.title if app.contact else None,
         original_subject=original.subject,
         original_body=original.body,
@@ -117,7 +117,7 @@ def process_application(
         app.stage = "ghosted_dead"
         return "marked_ghosted_dead"
 
-    if bdays >= settings.nudge2_business_days:
+    if settings.nudge2_business_days and bdays >= settings.nudge2_business_days:
         if _existing_nudge(db, app.id, 2) is None:
             _create_nudge_draft(db, app, 2, bdays)
             return "nudge2_drafted"

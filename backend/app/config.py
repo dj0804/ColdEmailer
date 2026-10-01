@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"          # reply classification (cheap/fast)
     openai_draft_model: str = "gpt-5"     # outreach + nudge drafting (higher quality)
     hunter_api_key: str = ""
+    # Off = discovery and verification never call Hunter, even with a key set.
+    hunter_enabled: bool = True
     # Role-specific resume variants live at {resume_dir}/resume_{variant}.pdf
     # (e.g. resume_ai_engineer.pdf). Applications carry the variant to attach;
     # anything unset falls back to resume_default_variant.
@@ -31,7 +33,7 @@ class Settings(BaseSettings):
     daily_send_cap: int = 20
     reply_poll_minutes: int = 15
     nudge1_business_days: int = 10
-    nudge2_business_days: int = 20
+    nudge2_business_days: int = 20  # 0 disables the second nudge
     # Business days after which a still-silent application is marked ghosted_dead.
     # Kept past nudge2 so the second nudge has time to land.
     nudge_dead_business_days: int = 30

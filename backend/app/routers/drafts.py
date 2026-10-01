@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..db import get_db
-from ..services import drafting, rate_limit, send
+from ..services import bulk_send, drafting, rate_limit, send
 
 router = APIRouter(prefix="/api/drafts", tags=["drafts"])
 
@@ -34,6 +34,26 @@ def list_drafts(
     if batch_id:
         q = q.where(models.EmailDraft.batch_id == batch_id)
     return db.scalars(q).all()
+
+
+@router.post("/send-all")
+def send_all_pending():
+    """Approve every currently-pending draft and send them, spaced 1-3 min apart.
+
+    Runs in the background; poll GET /send-all for progress.
+    """
+    return bulk_send.start()
+
+
+@router.get("/send-all")
+def send_all_status():
+    return bulk_send.status()
+
+
+@router.post("/send-all/stop")
+def send_all_stop():
+    """Stop after the current email; unsent drafts stay pending."""
+    return bulk_send.stop()
 
 
 @router.get("/{draft_id}", response_model=schemas.DraftOut)

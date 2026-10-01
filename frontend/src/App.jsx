@@ -33,6 +33,7 @@ export default function App() {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(null)
   const [reviewId, setReviewId] = useState(null)
+  const [bulk, setBulk] = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +45,30 @@ export default function App() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Track a background send-all run; poll while it's going.
+  useEffect(() => {
+    api.sendAllStatus().then(setBulk).catch(() => {})
+  }, [])
+  useEffect(() => {
+    if (!bulk?.running) return
+    const t = setInterval(async () => {
+      try {
+        const s = await api.sendAllStatus()
+        setBulk(s)
+        if (!s.running) load()
+      } catch { /* transient — next tick retries */ }
+    }, 10000)
+    return () => clearInterval(t)
+  }, [bulk?.running, load])
+
+  async function sendAll() {
+    const n = data?.pending_count || 0
+    if (!n) return
+    if (!window.confirm(`Approve and send all ${n} pending drafts? They go out one at a time, 1–3 minutes apart (about ${Math.round(n * 2)} min total).`)) return
+    setError(null)
+    try { setBulk(await api.sendAll()) } catch (e) { setError(e.message) }
+  }
 
   async function run(label, fn) {
     setBusy(label)
@@ -78,6 +103,14 @@ export default function App() {
           </span>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {bulk?.running ? (
+            <button onClick={async () => setBulk(await api.sendAllStop())}>Stop sending</button>
+          ) : (
+            <button className="primary" onClick={sendAll}
+              disabled={!!busy || !data?.pending_count}>
+              Approve &amp; send all{data?.pending_count ? ` (${data.pending_count})` : ''}
+            </button>
+          )}
           <button onClick={() => run('poll', api.pollReplies)} disabled={!!busy}>
             {busy === 'poll' ? 'Checking…' : 'Check replies'}
           </button>
@@ -87,6 +120,20 @@ export default function App() {
           <button onClick={load} disabled={!!busy}>Refresh</button>
         </div>
       </header>
+
+      {bulk && bulk.total > 0 && (
+        <div style={{
+          background: bulk.running ? '#eef6ff' : '#f0fdf4', border: '1px solid var(--border)',
+          borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 14,
+        }}>
+          {bulk.running ? 'Sending' : 'Last bulk send'}: {bulk.sent}/{bulk.total} sent
+          {bulk.skipped ? ` · ${bulk.skipped} skipped` : ''}
+          {bulk.failed ? ` · ${bulk.failed} failed` : ''}
+          {bulk.running && bulk.next_send_at &&
+            ` · next at ${new Date(bulk.next_send_at).toLocaleTimeString()}`}
+          {bulk.last_error && <div style={{ color: 'var(--danger)', marginTop: 4 }}>{bulk.last_error}</div>}
+        </div>
+      )}
 
       {error && (
         <div style={{

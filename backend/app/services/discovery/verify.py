@@ -48,8 +48,8 @@ def _mx_verify(email: str) -> VerifyResult:
 
 
 def _hunter_verify(email: str) -> VerifyResult:
-    # Fall through to the free checker once the monthly quota is spent.
-    if quota.is_exhausted("hunter"):
+    # Fall through to the free checker when disabled or the monthly quota is spent.
+    if not settings.hunter_enabled or quota.is_exhausted("hunter"):
         return _mx_verify(email)
     try:
         r = httpx.get(

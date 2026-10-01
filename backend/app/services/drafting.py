@@ -73,14 +73,11 @@ def generate_draft_for_application(
     db: Session, app: Application, batch_id: str | None = None
 ) -> EmailDraft:
     company: Company = db.get(Company, app.company_id)
-    contact: Contact | None = app.contact
 
     result = personalize.generate_outreach(
         company_name=company.name,
         company_domain=company.domain,
         company_notes=company.notes,
-        recipient_name=contact.name if contact else None,
-        recipient_title=contact.title if contact else None,
         role=app.role or "6-month internship (intern-to-FTE)",
         resume_variant=app.resume_variant,
     )
