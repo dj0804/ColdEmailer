@@ -18,8 +18,10 @@ Do not skip that step: without it, anyone with the URL could click
 ## 1. Provision the server
 
 ```bash
-# from the repo root, first push the code up
-bash deploy/push.sh <SERVER_IP> <key.pem>
+# from the repo root, first push the code up. The tunnel doesn't exist yet, so
+# go direct: add a ~/.ssh/config entry (Host applier-direct, HostName <SERVER_IP>,
+# User ubuntu, IdentityFile <key.pem>) and pass it as the host.
+bash deploy/push.sh applier-direct
 
 # then on the server
 ssh -i <key.pem> ubuntu@<SERVER_IP>
@@ -96,8 +98,40 @@ from the dashboard.
 Scheduler jobs: `poll_replies` (15 min), `check_ghosting` (daily),
 `daily_outreach` (weekdays).
 
+## SSH access (through the tunnel)
+
+Port 22 doesn't need to be open: SSH rides the same tunnel as the dashboard, so a
+changing home IP never locks you out.
+
+On the server, add an ingress rule above the 404 catch-all in
+`/etc/cloudflared/config.yml`, then route DNS and restart:
+
+```yaml
+  - hostname: ssh.devj.in
+    service: ssh://localhost:22
+```
+
+```bash
+cloudflared tunnel route dns <TUNNEL_ID> ssh.devj.in
+sudo systemctl restart cloudflared
+```
+
+Protect `ssh.devj.in` with its own Cloudflare Access application (same policy as
+the dashboard). Locally, install `cloudflared` (`winget install Cloudflare.cloudflared`)
+and add to `~/.ssh/config`:
+
+```
+Host applier
+    HostName ssh.devj.in
+    User ubuntu
+    IdentityFile <key.pem>
+    ProxyCommand "C:/Program Files (x86)/cloudflared/cloudflared.exe" access ssh --hostname %h
+```
+
+`ssh applier` now works from any network; the security group needs no SSH rule.
+
 ## Redeploying after code changes
 
 ```bash
-bash deploy/push.sh <SERVER_IP> <key.pem>
+bash deploy/push.sh            # defaults to the `applier` ssh host
 ```
