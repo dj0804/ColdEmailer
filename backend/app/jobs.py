@@ -9,7 +9,7 @@ from sqlalchemy import select
 from .config import settings
 from .db import SessionLocal
 from .models import Application, Contact, EmailDraft, ReplyEvent
-from .services import classify, drafting, gmail, nudge, queueing
+from .services import classify, drafting, gmail, llm, nudge, queueing
 from .services.discovery import chain as discovery_chain
 from .services.discovery import quota as discovery_quota
 
@@ -100,6 +100,12 @@ def poll_replies() -> dict:
                 if label is None:
                     try:
                         label = classify.classify_reply(sender, body)["label"]
+                    except llm.BudgetExceeded:
+                        # Rules already filtered bounces and autoresponders, so this
+                        # is most likely a person. Keep it visible rather than
+                        # waiting for budget that won't return until the window rolls.
+                        label = "recruiter_reply"
+                        summary["budget_fallbacks"] = summary.get("budget_fallbacks", 0) + 1
                     except Exception as e:  # noqa: BLE001
                         # Leave it unrecorded so the next poll retries it; one LLM
                         # failure (e.g. no credit) mustn't stop every other thread.
@@ -203,10 +209,13 @@ def daily_outreach(limit: int | None = None) -> dict:
             except Exception as e:  # noqa: BLE001
                 db.rollback()
                 summary["errors"].append(f"{company.name}: draft {e}"[:160])
-                if "insufficient_quota" in str(e):
-                    # Out of OpenAI credit: every remaining draft would fail too.
-                    # Stop; these companies stay queued and are retried next run.
-                    summary["stopped"] = "openai_out_of_credit"
+                if isinstance(e, llm.BudgetExceeded) or "insufficient_quota" in str(e):
+                    # Out of budget or OpenAI credit: every remaining draft would
+                    # fail too. Stop; these companies stay queued for next run.
+                    summary["stopped"] = (
+                        "llm_budget_exceeded" if isinstance(e, llm.BudgetExceeded)
+                        else "openai_out_of_credit"
+                    )
                     break
                 continue
 

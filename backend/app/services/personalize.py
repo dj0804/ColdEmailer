@@ -79,7 +79,10 @@ specific, low-hype, and names the company (e.g. "6-month internship at \
 {{company}} — final-year CS student"). Body is the full email including \
 sign-off."""
 
-USER_TEMPLATE = """Fill the template for this company.
+# Everything that is identical across companies comes first (candidate facts,
+# resume), the per-company parts last. OpenAI caches a repeated prompt prefix
+# and bills it at a 90% discount, so this ordering is worth real money at volume.
+USER_TEMPLATE = """Fill the template for one company (given at the end).
 
 CANDIDATE FACTS (use these exactly):
 Name: {name}
@@ -89,6 +92,9 @@ Availability: {availability}
 Sign-off contact line (use verbatim under "Dev Jain"):
 {email} | {phone}
 {links}
+
+Resume (for grounding the credibility line; do not copy jargon wholesale):
+{resume}
 
 GREETING LINE (use verbatim): {greeting}
 
@@ -100,48 +106,43 @@ customer and engineering pages; may be empty — if empty, describe their domain
 accurately from the company name and do NOT invent specifics):
 {company_context}
 
-Resume (for grounding the credibility line; do not copy jargon wholesale):
-{resume}
-
 Produce the JSON now. The {{specific_area}} must be concrete and true for \
 {company}. Return only the JSON object."""
 
 
-NUDGE_SYSTEM = """You write a SHORT follow-up email for a student who cold-emailed \
-someone about a 6-month internship and got no reply. It sends as a reply on the \
-original thread, so do not re-introduce him at length or repeat the whole pitch.
+# Follow-ups are short and formulaic, so they're filled from templates rather than
+# drafted by the LLM — that keeps them free. A few phrasings rotate (picked
+# deterministically per company) so a batch of nudges doesn't read identically.
+_NUDGE1_TEMPLATES = (
+    "Hi,\n\n"
+    "Just bumping my note below in case it got buried. I'd still love to be "
+    "considered for a 6-month internship at {company} — {availability}.\n\n"
+    "If this isn't the right inbox, a pointer to the right person would mean a lot. "
+    "And if it's not a fit right now, a quick no is completely fine too.\n\n"
+    "Cheers,\nDev Jain",
 
-Voice: same person as the original — plain, warm, brief, never pushy or guilt-trippy. \
-No "just circling back", no "per my last email", no fake urgency.
+    "Hi,\n\n"
+    "I know inboxes get busy, so a quick follow-up on my email below. I'm still "
+    "keen on a 6-month internship at {company} — {availability}.\n\n"
+    "Happy to be pointed to someone else if that's easier, and a short \"not right "
+    "now\" is totally fine as well.\n\n"
+    "Cheers,\nDev Jain",
 
-Nudge #1 (first follow-up): a light bump. Acknowledge they're busy, restate the ask \
-in one line (6-month internship, can start remotely now / on-site from Jan 2027), and \
-make it easy to reply even with a no. 50-80 words.
+    "Hi,\n\n"
+    "Following up on my note below about a 6-month internship at {company}. "
+    "{availability_sentence}\n\n"
+    "If there's a better person to speak to, I'd be grateful for an introduction — "
+    "and no worries at all if it's not a fit.\n\n"
+    "Cheers,\nDev Jain",
+)
 
-Nudge #2 (final follow-up): gracious close. Signal this is the last note, leave the \
-door open, thank them sincerely. Shorter still — 35-60 words. Do NOT make a new ask \
-beyond "if it's not a fit, no worries at all".
-
-Rules:
-- Never invent new facts, achievements, or company details.
-- Do not re-attach or mention the resume being attached again (it was already sent); \
-you may refer to "my note below" or "my earlier email".
-- End with "Cheers,\\nDev Jain" and nothing after it (no contact block — it's a reply).
-
-Return ONLY JSON: {"subject": "...", "body": "..."}. The subject should be the \
-original subject prefixed with "Re: " unless it already starts with "Re:"."""
-
-NUDGE_USER = """This is follow-up #{nudge_number} on a thread that has had no reply \
-for {business_days} business days.
-
-RECIPIENT: {recipient_name} ({recipient_title}) at {company}
-
-ORIGINAL EMAIL SUBJECT: {original_subject}
-
-ORIGINAL EMAIL BODY:
-{original_body}
-
-Write follow-up #{nudge_number} now. Return only the JSON object."""
+_NUDGE2_TEMPLATE = (
+    "Hi,\n\n"
+    "One last note from me on the internship below — I don't want to crowd your "
+    "inbox. If anything opens up at {company}, I'd be glad to hear from you.\n\n"
+    "Thanks again for your time.\n\n"
+    "Cheers,\nDev Jain"
+)
 
 
 def generate_nudge(
@@ -154,39 +155,26 @@ def generate_nudge(
     original_body: str,
     business_days: int,
 ) -> dict:
-    """Return {'subject': str, 'body': str} for a nudge reply on an existing thread."""
-    user = NUDGE_USER.format(
-        nudge_number=nudge_number,
-        business_days=business_days,
-        recipient_name=(recipient_name.split()[0] if recipient_name else "there"),
-        recipient_title=recipient_title or "(unknown title)",
-        company=company_name,
-        original_subject=original_subject,
-        original_body=original_body,
-    )
-    last_err: Exception | None = None
-    for _ in range(3):
-        raw = llm.chat(
-            model=settings.openai_draft_model,
-            system=NUDGE_SYSTEM,
-            user=user,
-            max_tokens=4000,
-            temperature=0.7,
-            reasoning_effort="low",
-            json_mode=True,
+    """Return {'subject': str, 'body': str} for a nudge reply on an existing thread.
+
+    Template-filled (no LLM call). The extra arguments are kept so callers don't
+    change; the recipient is deliberately not used, matching the outreach.
+    """
+    availability = (settings.candidate_availability or "").strip().rstrip(".")
+    if nudge_number >= 2:
+        body = _NUDGE2_TEMPLATE.format(company=company_name)
+    else:
+        template = _NUDGE1_TEMPLATES[sum(map(ord, company_name)) % len(_NUDGE1_TEMPLATES)]
+        body = template.format(
+            company=company_name,
+            availability=availability,  # usually starts with "I", so no lowercasing
+            availability_sentence=(availability[:1].upper() + availability[1:] + ".")
+            if availability else "",
         )
-        try:
-            data = _extract_json(raw)
-            subject = (data.get("subject") or "").strip()
-            body = (data.get("body") or "").strip()
-            if subject and body:
-                if not subject.lower().startswith("re:"):
-                    subject = f"Re: {subject}"
-                return {"subject": subject, "body": body}
-            last_err = ValueError(f"incomplete nudge: {raw[:120]!r}")
-        except (ValueError, KeyError) as e:
-            last_err = e
-    raise ValueError(f"LLM failed to produce a valid nudge after 3 tries: {last_err}")
+    subject = original_subject
+    if not subject.lower().startswith("re:"):
+        subject = f"Re: {subject}"
+    return {"subject": subject, "body": body}
 
 
 GENERIC_SYSTEM = """You write a short, warm cold email to a company's shared \
@@ -295,7 +283,7 @@ def generate_generic_outreach(
             user=user,
             max_tokens=6000,
             temperature=0.8,
-            reasoning_effort="low",
+            reasoning_effort=settings.openai_draft_reasoning_effort,
             json_mode=True,
         )
         try:
@@ -370,7 +358,9 @@ def generate_outreach(
             # before emitting the answer, so leave generous headroom.
             max_tokens=6000,
             temperature=0.8,       # ignored by reasoning models; variety on others
-            reasoning_effort="low",  # templated fill — heavy reasoning not needed
+            # Templated fill: heavy reasoning isn't needed, and reasoning tokens
+            # are billed as output — they're most of the cost of a draft.
+            reasoning_effort=settings.openai_draft_reasoning_effort,
             json_mode=True,
         )
         try:

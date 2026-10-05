@@ -38,3 +38,5 @@ token.json*
 backend/token.json*
 bulk_send_schedule.json
 backend/bulk_send_schedule.json
+llm_spend.json
+backend/llm_spend.json

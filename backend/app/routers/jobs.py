@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from .. import jobs, models, schemas
 from ..db import get_db
-from ..services import job_log, queueing
+from ..services import job_log, llm, queueing
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -40,6 +40,7 @@ def jobs_status():
         "now_utc": now.isoformat(timespec="seconds"),
         "jobs": jobs,
         "last_runs": job_log.status(),
+        "llm_spend": llm.spend(),
     }
 
 

@@ -6,7 +6,14 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"          # reply classification (cheap/fast)
-    openai_draft_model: str = "gpt-5"     # outreach + nudge drafting (higher quality)
+    openai_draft_model: str = "gpt-5"     # outreach drafting (nudges are templated)
+    openai_draft_reasoning_effort: str = "low"
+    # Hard cap on OpenAI spend per budget window. Every call is priced from its
+    # reported token usage; once the window's total reaches the cap, further
+    # calls raise BudgetExceeded instead of reaching OpenAI. 0 disables the cap.
+    llm_budget_usd: float = 5.0
+    llm_budget_start: str = "2026-10-05"  # first window's start date (UTC)
+    llm_budget_days: int = 42             # window length; rolls over after this
     hunter_api_key: str = ""
     # Off = discovery and verification never call Hunter, even with a key set.
     hunter_enabled: bool = True
