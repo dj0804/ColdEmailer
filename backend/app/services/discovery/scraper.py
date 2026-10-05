@@ -236,6 +236,13 @@ def inbox_kind(
     """
     raw = email.split("@", 1)[0].lower()
     lp = _localpart(email)
+    # Compound local parts: any non-hiring role word disqualifies the whole
+    # address (careers+noreply@, people-support@, contact-uk@).
+    words = [w for w in re.split(r"[._+\-]+", raw) if w]
+    if len(words) > 1 and any(
+        w in ROLE_LOCALPARTS and w not in HIRING_LOCALPARTS for w in words
+    ):
+        return "other"
     if (lp in HIRING_LOCALPARTS or raw.startswith(_HR_PREFIXES)
             or any(s in lp for s in _HIRING_SUBSTRINGS)):
         return "hiring"

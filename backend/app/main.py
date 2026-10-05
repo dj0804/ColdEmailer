@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import Base, engine
 from .jobs import check_ghosting, daily_outreach, poll_replies
-from .services import job_log
+from .services import bulk_send, job_log
 
 # APScheduler is silent by default, which makes "did the job run?" unanswerable
 # from the logs. INFO gives us an execution line per run in journalctl.
@@ -84,6 +84,9 @@ def startup() -> None:
 
     if not scheduler.running:
         scheduler.start()
+
+    # Re-arm a scheduled bulk send that was pending when the process stopped.
+    bulk_send.resume_schedule()
 
 
 @app.on_event("shutdown")

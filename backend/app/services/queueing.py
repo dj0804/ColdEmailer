@@ -85,8 +85,14 @@ def add_targets(db: Session, targets: list[dict]) -> dict:
 
 
 def next_batch(db: Session, limit: int) -> list[Company]:
-    """Queued companies that don't yet have an application, best-priority first."""
-    have_app = select(Application.company_id).distinct()
+    """Queued companies without a real application yet, best-priority first.
+
+    An application still at stage 'draft' means drafting failed (e.g. the LLM was
+    out of credit), so that company is retried rather than stranded.
+    """
+    have_app = (
+        select(Application.company_id).where(Application.stage != "draft").distinct()
+    )
     return list(
         db.scalars(
             select(Company)

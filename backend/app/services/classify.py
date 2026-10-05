@@ -1,12 +1,17 @@
-"""LLM classification of a single inbound reply.
+"""Classification of a single inbound reply.
 
-Pure LLM call (gpt-4o) per the spec — no rule-based pre-filter. Returns one of:
+Two machine-generated kinds are recognised by rules first, without the LLM:
+``bounce`` (delivery failure) and ``auto_reply`` (autoresponder / "we received
+your email"). They are unambiguous from headers and boilerplate, and handling
+them without the LLM means a bounce is still caught when the OpenAI account is
+out of credit. Everything else goes to the LLM, which returns one of
 recruiter_reply | interview_request | rejection | other.
 """
 
 from __future__ import annotations
 
 import json
+import re
 
 from ..config import settings
 from . import llm
@@ -43,6 +48,42 @@ choose recruiter_reply — a real opportunity wrongly closed costs far more than
 one kept open.
 
 Return ONLY JSON: {"label": "<one of the four>", "reason": "<short reason>"}."""
+
+
+_BOUNCE_SENDER = re.compile(r"mailer-daemon|postmaster|mail delivery (subsystem|system)", re.I)
+_BOUNCE_BODY = re.compile(
+    r"address not found|delivery has failed|couldn't be delivered|could not be delivered"
+    r"|undeliverable|permanent fatal errors|message blocked|recipient address rejected"
+    r"|\b55[0-4] ?5\.\d\.\d",
+    re.I,
+)
+_AUTO_SENDER = re.compile(r"no-?reply|do-?not-?reply|donotreply", re.I)
+_AUTO_BODY = re.compile(
+    r"this is an automat|auto-?generated|automatic reply|out of (the )?office"
+    r"|(we('ve| have)|has been) received your (message|email|application)"
+    r"|someone will review your email|unable to (answer|respond to) every",
+    re.I,
+)
+
+
+def rule_label(sender: str, body: str, headers: dict[str, str]) -> str | None:
+    """'bounce' | 'auto_reply' for machine-generated mail, else None (ask the LLM).
+
+    ``headers`` holds the lower-cased names Auto-Submitted, X-Autoreply,
+    X-Autorespond and Precedence (missing ones may be absent or empty).
+    """
+    if _BOUNCE_SENDER.search(sender) or _BOUNCE_BODY.search(body[:1500]):
+        return "bounce"
+    auto_submitted = headers.get("auto-submitted", "").lower()
+    if (
+        (auto_submitted and auto_submitted != "no")
+        or headers.get("x-autoreply") or headers.get("x-autorespond")
+        or headers.get("precedence", "").lower() in ("auto_reply", "bulk", "junk")
+        or _AUTO_SENDER.search(sender)
+        or _AUTO_BODY.search(body[:1500])
+    ):
+        return "auto_reply"
+    return None
 
 
 def classify_reply(sender: str, body: str) -> dict:

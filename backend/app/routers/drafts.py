@@ -37,12 +37,16 @@ def list_drafts(
 
 
 @router.post("/send-all")
-def send_all_pending():
+def send_all_pending(at: datetime | None = Query(default=None)):
     """Approve every currently-pending draft and send them, spaced 1-3 min apart.
 
-    Runs in the background; poll GET /send-all for progress.
+    With ``at`` (ISO 8601 with a timezone offset), sending starts at that time
+    instead of now. Runs in the background; poll GET /send-all for progress.
     """
-    return bulk_send.start()
+    try:
+        return bulk_send.start(at)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/send-all")
@@ -52,7 +56,7 @@ def send_all_status():
 
 @router.post("/send-all/stop")
 def send_all_stop():
-    """Stop after the current email; unsent drafts stay pending."""
+    """Stop after the current email (or cancel a scheduled run); unsent drafts stay pending."""
     return bulk_send.stop()
 
 

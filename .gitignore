@@ -36,3 +36,5 @@ token.json.dead
 backend/token.json.dead
 token.json*
 backend/token.json*
+bulk_send_schedule.json
+backend/bulk_send_schedule.json

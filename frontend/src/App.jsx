@@ -11,6 +11,7 @@ const STAGE_STYLE = {
   interview_request: ['#dcfce7', '#166534'],
   rejection: ['#fef2f2', '#b91c1c'],
   ghosted_dead: ['#f3f4f6', '#6b7280'],
+  bounced: ['#fff1f2', '#9f1239'],
 }
 
 function Stage({ value }) {
@@ -34,6 +35,7 @@ export default function App() {
   const [busy, setBusy] = useState(null)
   const [reviewId, setReviewId] = useState(null)
   const [bulk, setBulk] = useState(null)
+  const [sendAt, setSendAt] = useState('') // datetime-local value; '' = send now
 
   const load = useCallback(async () => {
     try {
@@ -65,9 +67,14 @@ export default function App() {
   async function sendAll() {
     const n = data?.pending_count || 0
     if (!n) return
-    if (!window.confirm(`Approve and send all ${n} pending drafts? They go out one at a time, 1–3 minutes apart (about ${Math.round(n * 2)} min total).`)) return
+    const when = sendAt ? new Date(sendAt) : null
+    const start = when ? `starting ${when.toLocaleString()}` : 'starting now'
+    if (!window.confirm(`Approve and send all ${n} pending drafts, ${start}? They go out one at a time, 1–3 minutes apart (about ${Math.round(n * 2)} min total).`)) return
     setError(null)
-    try { setBulk(await api.sendAll()) } catch (e) { setError(e.message) }
+    try {
+      setBulk(await api.sendAll(when ? when.toISOString() : null))
+      setSendAt('')
+    } catch (e) { setError(e.message) }
   }
 
   async function run(label, fn) {
@@ -104,12 +111,19 @@ export default function App() {
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {bulk?.running ? (
-            <button onClick={async () => setBulk(await api.sendAllStop())}>Stop sending</button>
-          ) : (
-            <button className="primary" onClick={sendAll}
-              disabled={!!busy || !data?.pending_count}>
-              Approve &amp; send all{data?.pending_count ? ` (${data.pending_count})` : ''}
+            <button onClick={async () => setBulk(await api.sendAllStop())}>
+              {bulk.scheduled_for ? 'Cancel schedule' : 'Stop sending'}
             </button>
+          ) : (
+            <>
+              <input type="datetime-local" value={sendAt} title="Send at (leave empty to send now)"
+                onChange={(e) => setSendAt(e.target.value)} />
+              <button className="primary" onClick={sendAll}
+                disabled={!!busy || !data?.pending_count}>
+                {sendAt ? 'Schedule' : 'Approve & send'} all
+                {data?.pending_count ? ` (${data.pending_count})` : ''}
+              </button>
+            </>
           )}
           <button onClick={() => run('poll', api.pollReplies)} disabled={!!busy}>
             {busy === 'poll' ? 'Checking…' : 'Check replies'}
@@ -126,7 +140,9 @@ export default function App() {
           background: bulk.running ? '#eef6ff' : '#f0fdf4', border: '1px solid var(--border)',
           borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 14,
         }}>
-          {bulk.running ? 'Sending' : 'Last bulk send'}: {bulk.sent}/{bulk.total} sent
+          {bulk.scheduled_for
+            ? `Scheduled: ${bulk.total} drafts start sending ${new Date(bulk.scheduled_for).toLocaleString()}`
+            : <>{bulk.running ? 'Sending' : 'Last bulk send'}: {bulk.sent}/{bulk.total} sent</>}
           {bulk.skipped ? ` · ${bulk.skipped} skipped` : ''}
           {bulk.failed ? ` · ${bulk.failed} failed` : ''}
           {bulk.running && bulk.next_send_at &&

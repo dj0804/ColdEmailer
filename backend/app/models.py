@@ -20,7 +20,7 @@ def utcnow() -> datetime:
 # ---- Stage / status vocabularies (kept as plain strings in SQLite) ----
 # Application.stage:
 #   draft | pending_approval | sent | recruiter_reply | interview_request
-#   | rejection | ghosted_dead
+#   | rejection | ghosted_dead | bounced
 # EmailDraft.type:   outreach | nudge1 | nudge2
 # EmailDraft.status: pending | approved | sent | rejected
 # Contact.source:    hunter | scrape | pattern_verified

@@ -182,6 +182,11 @@ def _header(msg: dict, name: str) -> str:
     return ""
 
 
+def message_header(msg: dict, name: str) -> str:
+    """A header's value from a message resource ('' when absent)."""
+    return _header(msg, name)
+
+
 def message_from(msg: dict) -> str:
     """The 'From' header of a message resource (e.g. 'Jane <jane@x.com>')."""
     return _header(msg, "From")

@@ -29,7 +29,8 @@ export const api = {
   jobsStatus: () => req('/api/jobs/status'),
   pollReplies: () => req('/api/jobs/poll-replies', { method: 'POST' }),
   checkGhosting: () => req('/api/jobs/check-ghosting', { method: 'POST' }),
-  sendAll: () => req('/api/drafts/send-all', { method: 'POST' }),
+  sendAll: (at) =>
+    req(`/api/drafts/send-all${at ? `?at=${encodeURIComponent(at)}` : ''}`, { method: 'POST' }),
   sendAllStatus: () => req('/api/drafts/send-all'),
   sendAllStop: () => req('/api/drafts/send-all/stop', { method: 'POST' }),
 }

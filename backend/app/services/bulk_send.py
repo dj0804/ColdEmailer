@@ -7,13 +7,19 @@ pattern Gmail's abuse heuristics look for, so the gap is the point.
 
 Only drafts that were pending at click time are included — anything drafted while
 a run is in progress waits for the next explicit approval.
+
+A run can be scheduled for later (e.g. Monday morning, so cold email doesn't land
+over a weekend). The schedule is persisted to disk and re-armed on startup, so a
+restart or redeploy in between doesn't silently drop it.
 """
 
 from __future__ import annotations
 
+import json
 import random
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -23,6 +29,8 @@ from . import job_log, rate_limit, send
 
 MIN_GAP_S = 60
 MAX_GAP_S = 180
+
+SCHEDULE_FILE = Path(__file__).resolve().parents[2] / "bulk_send_schedule.json"
 
 _lock = threading.Lock()
 _stop = threading.Event()
@@ -39,12 +47,47 @@ def status() -> dict:
 
 
 def stop() -> dict:
+    """Stop a run in progress, or cancel a scheduled one. Unsent drafts stay pending."""
     _stop.set()
+    _clear_schedule()
     return status()
 
 
-def start() -> dict:
-    """Snapshot every pending draft and start sending them. Returns the new state."""
+def _save_schedule(at: datetime, ids: list[int]) -> None:
+    SCHEDULE_FILE.write_text(json.dumps({"at": at.isoformat(), "draft_ids": ids}))
+
+
+def _clear_schedule() -> None:
+    try:
+        SCHEDULE_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _launch(ids: list[int], at: datetime | None) -> None:
+    """Reset state and start the worker thread. Caller holds _lock."""
+    _stop.clear()
+    _state.clear()
+    _state.update(
+        running=bool(ids), total=len(ids), sent=0, failed=0, skipped=0,
+        started_at=None if at else _now(),
+        scheduled_for=at.isoformat(timespec="seconds") if at else None,
+        next_send_at=None, last_error=None,
+    )
+    if ids:
+        threading.Thread(target=_run, args=(ids, at), daemon=True).start()
+
+
+def start(at: datetime | None = None) -> dict:
+    """Snapshot every pending draft and send them now, or at ``at`` (UTC-aware).
+
+    Returns the new state.
+    """
+    if at is not None:
+        if at.tzinfo is None:
+            raise ValueError("Scheduled time must include a timezone")
+        if at <= datetime.now(timezone.utc):
+            at = None  # a time in the past just means "now"
     with _lock:
         if _state.get("running"):
             return dict(_state)
@@ -59,15 +102,30 @@ def start() -> dict:
             )
         finally:
             db.close()
-        _stop.clear()
-        _state.clear()
-        _state.update(
-            running=bool(ids), total=len(ids), sent=0, failed=0, skipped=0,
-            started_at=_now(), next_send_at=None, last_error=None,
-        )
-        if ids:
-            threading.Thread(target=_run, args=(ids,), daemon=True).start()
+        if ids and at:
+            _save_schedule(at, ids)
+        _launch(ids, at)
         return dict(_state)
+
+
+def resume_schedule() -> None:
+    """Re-arm a persisted schedule after a restart (called at app startup).
+
+    If the time has already passed — e.g. the box was down on Monday morning, or
+    it restarted mid-run — the remaining drafts go out now; ones already sent are
+    skipped because they're no longer pending.
+    """
+    try:
+        data = json.loads(SCHEDULE_FILE.read_text())
+        at = datetime.fromisoformat(data["at"])
+        ids = [int(i) for i in data["draft_ids"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    if at <= datetime.now(timezone.utc):
+        at = None
+    with _lock:
+        if not _state.get("running"):
+            _launch(ids, at)
 
 
 def _send_one(draft_id: int) -> str:
@@ -109,7 +167,17 @@ def _send_one(draft_id: int) -> str:
         db.close()
 
 
-def _run(ids: list[int]) -> None:
+def _run(ids: list[int], at: datetime | None = None) -> None:
+    if at is not None:
+        wait_s = (at - datetime.now(timezone.utc)).total_seconds()
+        if wait_s > 0 and _stop.wait(wait_s):
+            with _lock:
+                _state["running"] = False
+                _state["last_error"] = "Scheduled send cancelled; drafts left pending."
+            return
+        with _lock:
+            _state["scheduled_for"] = None
+            _state["started_at"] = _now()
     for i, draft_id in enumerate(ids):
         if _stop.is_set():
             break
@@ -135,6 +203,7 @@ def _run(ids: list[int]) -> None:
                 ).isoformat(timespec="seconds")
             if _stop.wait(gap):
                 break
+    _clear_schedule()
     with _lock:
         _state["running"] = False
         _state["next_send_at"] = None

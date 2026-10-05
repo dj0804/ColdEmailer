@@ -14,7 +14,9 @@ from .services.discovery import chain as discovery_chain
 from .services.discovery import quota as discovery_quota
 
 # Stages we stop polling (definitive outcomes).
-TERMINAL_STAGES = {"rejection", "ghosted_dead", "duplicate_suppressed"}
+TERMINAL_STAGES = {"rejection", "ghosted_dead", "duplicate_suppressed", "bounced"}
+# Headers that mark machine-generated mail (see classify.rule_label).
+_AUTO_HEADERS = ("Auto-Submitted", "X-Autoreply", "X-Autorespond", "Precedence")
 # Rank used so a later, lesser reply can't downgrade a better stage.
 STAGE_RANK = {"sent": 1, "recruiter_reply": 2, "interview_request": 3}
 
@@ -28,8 +30,11 @@ def _ms_to_dt(ms: str | int | None) -> datetime | None:
 def _apply_classification(app: Application, label: str, when: datetime | None) -> None:
     if when:
         app.last_contact_at = when
-    if label == "other":
+    if label == "bounce":
+        app.stage = "bounced"  # dead address: stop polling and never nudge it
         return
+    if label in ("other", "auto_reply"):
+        return  # an autoresponder isn't a human reply; the follow-up still applies
     if label == "rejection":
         app.stage = "rejection"  # definitive
         return
@@ -44,7 +49,9 @@ def poll_replies() -> dict:
     Returns a small summary dict (useful for the manual-trigger endpoint / logs).
     """
     db = SessionLocal()
-    summary = {"threads_checked": 0, "new_replies": 0, "classifications": {}}
+    summary = {
+        "threads_checked": 0, "new_replies": 0, "classify_errors": 0, "classifications": {}
+    }
     try:
         me = (gmail.get_profile().get("emailAddress") or "").lower()
         apps = db.scalars(
@@ -88,8 +95,17 @@ def poll_replies() -> dict:
                     continue  # our own message not tracked as a draft (edge case)
 
                 body = gmail.message_text(msg)
-                result = classify.classify_reply(sender, body)
-                label = result["label"]
+                headers = {h.lower(): gmail.message_header(msg, h) for h in _AUTO_HEADERS}
+                label = classify.rule_label(sender, body, headers)
+                if label is None:
+                    try:
+                        label = classify.classify_reply(sender, body)["label"]
+                    except Exception as e:  # noqa: BLE001
+                        # Leave it unrecorded so the next poll retries it; one LLM
+                        # failure (e.g. no credit) mustn't stop every other thread.
+                        summary["classify_errors"] += 1
+                        summary.setdefault("first_error", str(e)[:200])
+                        continue
 
                 db.add(
                     ReplyEvent(
@@ -187,6 +203,11 @@ def daily_outreach(limit: int | None = None) -> dict:
             except Exception as e:  # noqa: BLE001
                 db.rollback()
                 summary["errors"].append(f"{company.name}: draft {e}"[:160])
+                if "insufficient_quota" in str(e):
+                    # Out of OpenAI credit: every remaining draft would fail too.
+                    # Stop; these companies stay queued and are retried next run.
+                    summary["stopped"] = "openai_out_of_credit"
+                    break
                 continue
 
             company.queue_status = "done"
@@ -201,6 +222,10 @@ def daily_outreach(limit: int | None = None) -> dict:
                     "resume_variant": app.resume_variant,
                 }
             )
+        # job_log keeps only scalar fields, so surface the errors as scalars too.
+        summary["error_count"] = len(summary["errors"])
+        if summary["errors"]:
+            summary["first_error"] = summary["errors"][0]
         return summary
     finally:
         db.close()
