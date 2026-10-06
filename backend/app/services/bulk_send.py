@@ -29,6 +29,7 @@ from . import job_log, rate_limit, send
 
 MIN_GAP_S = 60
 MAX_GAP_S = 180
+RATE_LIMIT_BACKOFF_S = 75  # Gmail's per-user quota is per minute
 
 SCHEDULE_FILE = Path(__file__).resolve().parents[2] / "bulk_send_schedule.json"
 
@@ -139,7 +140,18 @@ def _send_one(draft_id: int) -> str:
         draft.approved_at = datetime.now(timezone.utc)
         db.commit()
         try:
-            send.send_approved_draft(db, draft_id)
+            try:
+                send.send_approved_draft(db, draft_id)
+            except Exception as e:  # noqa: BLE001
+                # Gmail's per-minute API quota is shared with the reply poller,
+                # which can briefly exhaust it. Nothing was sent, so wait out the
+                # minute and retry once before counting this draft as failed.
+                if "rateLimitExceeded" not in str(e) and "Quota exceeded" not in str(e):
+                    raise
+                db.rollback()
+                if _stop.wait(RATE_LIMIT_BACKOFF_S):
+                    raise
+                send.send_approved_draft(db, draft_id)
         except rate_limit.RateLimitExceeded:
             # Put it back so it isn't left approved-but-unsent.
             draft.status = "pending"

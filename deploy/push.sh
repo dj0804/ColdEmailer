@@ -33,6 +33,7 @@ tar -czf - -C frontend dist \
 tar -czf - deploy assets | ${SSH} "tar -xzf - -C ${APP}"
 
 echo "==> Restarting service"
-${SSH} 'sudo systemctl restart applier && sleep 3 && curl -sf localhost:8000/api/health && echo'
+# Startup takes a few seconds on the small box, so poll rather than sleep once.
+${SSH} 'sudo systemctl restart applier && for i in $(seq 15); do curl -sf localhost:8000/api/health && echo && exit 0; sleep 1; done; echo "health check failed" >&2; exit 1'
 
 echo "Deployed."

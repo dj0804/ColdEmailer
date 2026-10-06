@@ -54,7 +54,10 @@ _BOUNCE_SENDER = re.compile(r"mailer-daemon|postmaster|mail delivery (subsystem|
 _BOUNCE_BODY = re.compile(
     r"address not found|delivery has failed|couldn't be delivered|could not be delivered"
     r"|undeliverable|permanent fatal errors|message blocked|recipient address rejected"
-    r"|\b55[0-4] ?5\.\d\.\d",
+    r"|\b55[0-4] ?5\.\d\.\d"
+    # An autoresponder announcing the inbox is dead is a bounce in all but name.
+    r"|inbox (has been|is) (discontinued|no longer (monitored|in use))"
+    r"|(address|inbox|mailbox) is no longer (monitored|in use|active)",
     re.I,
 )
 _AUTO_SENDER = re.compile(r"no-?reply|do-?not-?reply|donotreply", re.I)
