@@ -2,7 +2,7 @@
 
 Produces a distinct subject + body for each application. Personalization draws
 on: the candidate's resume, the specific company (name + scraped site context +
-notes), and the role framing (6-month internship -> full-time conversion). The
+notes), and the role framing (a full-time, entry-level role as a fresher). The
 recipient is deliberately not a personalization input: the email has to land with
 whoever handles hiring, whether that's a named recruiter or a careers@ inbox.
 """
@@ -16,11 +16,11 @@ from . import llm
 from .discovery import scraper
 from .resume import resume_text
 
-SYSTEM = """You personalize a proven cold-outreach email for a CS student \
-seeking a 6-month internship. The candidate already wrote the email he wants; \
-your job is to adapt it to ONE specific company — NOT to rewrite it in your own \
-voice. Preserve his wording, rhythm, brevity, and humble tone. Fill the blanks; \
-do not editorialize or pad.
+SYSTEM = """You personalize a proven cold-outreach email for a final-year CS \
+student seeking a FULL-TIME role as a fresher (new-grad / entry-level). The \
+candidate already wrote the email he wants; your job is to adapt it to ONE \
+specific company — NOT to rewrite it in your own voice. Preserve his wording, \
+rhythm, brevity, and humble tone. Fill the blanks; do not editorialize or pad.
 
 Personalization is about the COMPANY, never the recipient. The email goes to \
 whoever handles hiring there (a recruiter, HR, a founder, or a shared careers \
@@ -33,12 +33,13 @@ This is the template and voice to follow closely:
 
   I'll keep this short.
 
-  I'm Dev, a {{year}} at {{school}}. I've been following {{company}}'s work on \
-{{specific_area}}, and {{why_it_matters}}.
+  I'm Dev, a {{year}} at {{school}}, graduating in May 2027. I've been following \
+{{company}}'s work on {{specific_area}}, and {{why_it_matters}}.
 
   Over the past year I've worked on ML systems across internships at {{prior}} — \
 spanning recommendation engines, computer vision, and scalable AI pipelines. \
-{{bridge}} I'm now looking for a 6-month internship — {{availability}}.
+{{bridge}} I'm now looking to join a team full-time as a fresher — \
+{{availability}}.
 
   {{specific_ask}}
 
@@ -65,9 +66,10 @@ an engineer (e.g. the technical problem behind it). Grounded, not gushing.
 company builds, ONLY if there's a genuine overlap in the resume; otherwise leave \
 it empty.
 - {{specific_ask}}: one or two sentences directly asking to be considered for a \
-6-month internship at {{company}} — and, if this isn't the right person, to be \
-pointed to whoever is. SUBTLY note openness to it converting to full-time ("with \
-the hope it could grow into something longer-term") — never pushy.
+full-time, entry-level role at {{company}} in the role(s) given — and, if this \
+isn't the right person, to be pointed to whoever is. The goal is a full-time \
+offer, so do NOT pitch an internship. Only if natural, a light final clause may \
+say he's also happy to start with an internship that leads into a full-time role.
 - Do NOT add new claims about the candidate beyond the resume. Do NOT invent a \
 shared connection or that he uses their product.
 - Keep the candidate's phrases ("I'll keep this short.", "Either way, thanks for \
@@ -75,9 +77,9 @@ reading — I appreciate it.", "Cheers,").
 - End with the sign-off block using the exact contact line provided.
 
 Return ONLY a JSON object: {"subject": "...", "body": "..."}. Subject is short, \
-specific, low-hype, and names the company (e.g. "6-month internship at \
-{{company}} — final-year CS student"). Body is the full email including \
-sign-off."""
+specific, low-hype, and names the company and that it's a full-time/new-grad \
+ask (e.g. "New-grad AI/ML Engineer — Dev Jain (VIT '27) for {{company}}"). \
+Body is the full email including sign-off."""
 
 # Everything that is identical across companies comes first (candidate facts,
 # resume), the per-company parts last. OpenAI caches a repeated prompt prefix
@@ -116,20 +118,21 @@ Produce the JSON now. The {{specific_area}} must be concrete and true for \
 _NUDGE1_TEMPLATES = (
     "Hi,\n\n"
     "Just bumping my note below in case it got buried. I'd still love to be "
-    "considered for a 6-month internship at {company} — {availability}.\n\n"
+    "considered for a full-time, entry-level role at {company} — {availability}.\n\n"
     "If this isn't the right inbox, a pointer to the right person would mean a lot. "
     "And if it's not a fit right now, a quick no is completely fine too.\n\n"
     "Cheers,\nDev Jain",
 
     "Hi,\n\n"
     "I know inboxes get busy, so a quick follow-up on my email below. I'm still "
-    "keen on a 6-month internship at {company} — {availability}.\n\n"
+    "keen to join {company} full-time as a fresher — {availability}.\n\n"
     "Happy to be pointed to someone else if that's easier, and a short \"not right "
     "now\" is totally fine as well.\n\n"
     "Cheers,\nDev Jain",
 
     "Hi,\n\n"
-    "Following up on my note below about a 6-month internship at {company}. "
+    "Following up on my note below. I'm looking to join {company} full-time as a "
+    "fresher (graduating May 2027). "
     "{availability_sentence}\n\n"
     "If there's a better person to speak to, I'd be grateful for an introduction — "
     "and no worries at all if it's not a fit.\n\n"
@@ -138,7 +141,7 @@ _NUDGE1_TEMPLATES = (
 
 _NUDGE2_TEMPLATE = (
     "Hi,\n\n"
-    "One last note from me on the internship below — I don't want to crowd your "
+    "One last note from me on my email below — I don't want to crowd your "
     "inbox. If anything opens up at {company}, I'd be glad to hear from you.\n\n"
     "Thanks again for your time.\n\n"
     "Cheers,\nDev Jain"
@@ -178,9 +181,9 @@ def generate_nudge(
 
 
 GENERIC_SYSTEM = """You write a short, warm cold email to a company's shared \
-inbox (careers@/hr@/info@) for a CS student seeking a 6-month internship. There is \
-NO named recipient, so it greets the team generically — but it must still feel like \
-a real, eager person wrote it, not a mass-blast.
+inbox (careers@/hr@/info@) for a final-year CS student seeking a full-time \
+fresher role. There is NO named recipient, so it greets the team generically — \
+but it must still feel like a real, eager person wrote it, not a mass-blast.
 
 Follow the candidate's own voice and structure closely:
 
@@ -188,12 +191,13 @@ Follow the candidate's own voice and structure closely:
 
   I'll keep this short.
 
-  I'm Dev, a {{year}} at {{school}}. I've been following {{company}}'s work on \
-{{specific_area}}, and I'd be genuinely excited to contribute there.
+  I'm Dev, a {{year}} at {{school}}, graduating in May 2027. I've been \
+following {{company}}'s work on {{specific_area}}, and I'd be genuinely excited \
+to contribute there.
 
   Over the past year I've built ML systems across internships at {{prior}} — \
 spanning recommendation engines, computer vision, and scalable AI pipelines. I'm \
-looking for a 6-month internship — {{availability}}.
+looking to join a team full-time as a fresher — {{availability}}.
 
   {{eager_ask}}
 
@@ -213,15 +217,15 @@ way, thanks for reading — I appreciate it.", "Cheers,").
 provided context or an accurate description of their domain — never vague filler, \
 never invented.
 - {{eager_ask}}: one or two sentences that clearly, warmly ask to be considered for \
-a 6-month internship and to be pointed to the right person if this isn't the inbox \
-for it — show initiative and persistence without being pushy. A light nod to \
-full-time conversion is fine.
+a full-time, entry-level role and to be pointed to the right person if this \
+isn't the inbox for it — show initiative and persistence without being pushy. Do NOT pitch an \
+internship as the goal.
 - Convey real eagerness and willingness to prove himself; do NOT grovel or overclaim.
 - Do not invent a name or pretend to know a specific person.
 - End with the exact contact line provided under "Dev Jain".
 
 Return ONLY JSON: {"subject": "...", "body": "..."}. Subject is short and specific \
-(e.g. "6-month internship — final-year CS student, keen to join {{company}}")."""
+(e.g. "New-grad AI/ML Engineer, VIT '27, keen to join {{company}}")."""
 
 GENERIC_USER = """Write the generic-inbox email for this company.
 

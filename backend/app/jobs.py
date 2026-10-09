@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -19,6 +20,25 @@ TERMINAL_STAGES = {"rejection", "ghosted_dead", "duplicate_suppressed", "bounced
 _AUTO_HEADERS = ("Auto-Submitted", "X-Autoreply", "X-Autorespond", "Precedence")
 # Rank used so a later, lesser reply can't downgrade a better stage.
 STAGE_RANK = {"sent": 1, "recruiter_reply": 2, "interview_request": 3}
+
+
+_INTERN_WORDS = re.compile(r"\(?intern-to-fte\)?|\b(6[- ]month|internship|intern)\b", re.I)
+
+
+def _fulltime_role(target_role: str | None) -> str:
+    """The queued role reworded for a full-time ask.
+
+    Older queue entries carry internship titles ("ML Ranking Intern"); dropping
+    the internship words keeps the drafted role from contradicting itself.
+    """
+    role = _INTERN_WORDS.sub("", target_role or "")
+    role = re.sub(r"\(\s*\)", "", role)  # an emptied "(intern)" etc.
+    role = re.sub(r"\s{2,}", " ", role).strip(" -/,")
+    if not role:
+        return "AI/ML Engineer or Data Scientist"
+    if not re.search(r"engineer|scientist|developer|analyst|researcher", role, re.I):
+        role = role.replace(" (", " Engineer (", 1) if " (" in role else f"{role} Engineer"
+    return role
 
 
 def _ms_to_dt(ms: str | int | None) -> datetime | None:
@@ -134,7 +154,11 @@ def poll_replies() -> dict:
         db.close()
 
 
-def daily_outreach(limit: int | None = None) -> dict:
+def daily_outreach(
+    limit: int | None = None,
+    min_priority: int | None = None,
+    max_priority: int | None = None,
+) -> dict:
     """Work through the company queue: discover a contact, then stage a draft.
 
     Runs on weekdays only (weekend cold email gets buried). This job NEVER sends
@@ -146,7 +170,7 @@ def daily_outreach(limit: int | None = None) -> dict:
         "attempted": 0, "drafted": 0, "no_contact": 0, "errors": [], "companies": []
     }
     try:
-        for company in queueing.next_batch(db, limit):
+        for company in queueing.next_batch(db, limit, min_priority, max_priority):
             summary["attempted"] += 1
 
             contact = db.scalar(
@@ -197,11 +221,10 @@ def daily_outreach(limit: int | None = None) -> dict:
 
             # 2. Stage a personalized draft with the role-matched resume.
             try:
-                role = company.target_role or "6-month internship (intern-to-FTE)"
                 app = drafting.ensure_application(
                     db,
                     company.id,
-                    role if role.lower().startswith("6-month") else f"6-month {role} (intern-to-FTE)",
+                    f"Full-time {_fulltime_role(company.target_role)} (fresher / new grad)",
                     contact_id=contact.id,
                     resume_variant=company.resume_variant,
                 )

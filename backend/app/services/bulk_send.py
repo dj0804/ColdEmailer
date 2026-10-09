@@ -30,6 +30,7 @@ from . import job_log, rate_limit, send
 MIN_GAP_S = 60
 MAX_GAP_S = 180
 RATE_LIMIT_BACKOFF_S = 75  # Gmail's per-user quota is per minute
+RATE_LIMIT_RETRIES = 3     # waits 75s, 150s, 225s before giving up on a draft
 
 SCHEDULE_FILE = Path(__file__).resolve().parents[2] / "bulk_send_schedule.json"
 
@@ -79,10 +80,12 @@ def _launch(ids: list[int], at: datetime | None) -> None:
         threading.Thread(target=_run, args=(ids, at), daemon=True).start()
 
 
-def start(at: datetime | None = None) -> dict:
+def start(at: datetime | None = None, draft_type: str | None = None) -> dict:
     """Snapshot every pending draft and send them now, or at ``at`` (UTC-aware).
 
-    Returns the new state.
+    ``draft_type`` (e.g. 'outreach' or 'nudge1') limits the snapshot to that
+    type, so a day's cold outreach can go out without the follow-ups or vice
+    versa. Returns the new state.
     """
     if at is not None:
         if at.tzinfo is None:
@@ -97,7 +100,10 @@ def start(at: datetime | None = None) -> dict:
             ids = list(
                 db.scalars(
                     select(EmailDraft.id)
-                    .where(EmailDraft.status == "pending")
+                    .where(
+                        EmailDraft.status == "pending",
+                        *([EmailDraft.type == draft_type] if draft_type else []),
+                    )
                     .order_by(EmailDraft.id)
                 ).all()
             )
@@ -140,18 +146,20 @@ def _send_one(draft_id: int) -> str:
         draft.approved_at = datetime.now(timezone.utc)
         db.commit()
         try:
-            try:
-                send.send_approved_draft(db, draft_id)
-            except Exception as e:  # noqa: BLE001
-                # Gmail's per-minute API quota is shared with the reply poller,
-                # which can briefly exhaust it. Nothing was sent, so wait out the
-                # minute and retry once before counting this draft as failed.
-                if "rateLimitExceeded" not in str(e) and "Quota exceeded" not in str(e):
-                    raise
-                db.rollback()
-                if _stop.wait(RATE_LIMIT_BACKOFF_S):
-                    raise
-                send.send_approved_draft(db, draft_id)
+            # Gmail's per-minute API quota is shared with the reply poller, which
+            # can exhaust it for more than a minute at a time. Nothing is sent on
+            # a quota error, so wait it out and retry before counting a failure.
+            for attempt in range(RATE_LIMIT_RETRIES + 1):
+                try:
+                    send.send_approved_draft(db, draft_id)
+                    break
+                except Exception as e:  # noqa: BLE001
+                    quota = "rateLimitExceeded" in str(e) or "Quota exceeded" in str(e)
+                    if not quota or attempt == RATE_LIMIT_RETRIES:
+                        raise
+                    db.rollback()
+                    if _stop.wait(RATE_LIMIT_BACKOFF_S * (attempt + 1)):
+                        raise
         except rate_limit.RateLimitExceeded:
             # Put it back so it isn't left approved-but-unsent.
             draft.status = "pending"
@@ -181,12 +189,15 @@ def _send_one(draft_id: int) -> str:
 
 def _run(ids: list[int], at: datetime | None = None) -> None:
     if at is not None:
-        wait_s = (at - datetime.now(timezone.utc)).total_seconds()
-        if wait_s > 0 and _stop.wait(wait_s):
-            with _lock:
-                _state["running"] = False
-                _state["last_error"] = "Scheduled send cancelled; drafts left pending."
-            return
+        # Wait in chunks: a single Event.wait() over ~49 days overflows the
+        # platform timeout limit on Windows, and re-checking the clock each hour
+        # also keeps the start time honest across system sleep.
+        while (wait_s := (at - datetime.now(timezone.utc)).total_seconds()) > 0:
+            if _stop.wait(min(wait_s, 3600)):
+                with _lock:
+                    _state["running"] = False
+                    _state["last_error"] = "Scheduled send cancelled; drafts left pending."
+                return
         with _lock:
             _state["scheduled_for"] = None
             _state["started_at"] = _now()

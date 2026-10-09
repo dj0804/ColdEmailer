@@ -78,7 +78,7 @@ def generate_draft_for_application(
         company_name=company.name,
         company_domain=company.domain,
         company_notes=company.notes,
-        role=app.role or "6-month internship (intern-to-FTE)",
+        role=app.role or "Full-time AI/ML Engineer or Data Scientist (fresher / new grad)",
         resume_variant=app.resume_variant,
     )
 

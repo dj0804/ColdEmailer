@@ -60,18 +60,21 @@ def trigger_ghost_check():
 def trigger_daily_outreach(
     limit: int | None = Query(default=None),
     background: bool = Query(default=False),
+    min_priority: int | None = Query(default=None),
+    max_priority: int | None = Query(default=None),
 ):
     """Work today's batch from the company queue. Stages drafts; never sends.
 
     A full 50-company batch takes far longer than the tunnel's request timeout,
     so ``background=true`` returns immediately; the outcome lands in job status.
     """
+    kwargs = dict(limit=limit, min_priority=min_priority, max_priority=max_priority)
     if not background:
-        return jobs.daily_outreach(limit=limit)
+        return jobs.daily_outreach(**kwargs)
 
     def run():
         try:
-            job_log.record("daily_outreach", result=jobs.daily_outreach(limit=limit))
+            job_log.record("daily_outreach", result=jobs.daily_outreach(**kwargs))
         except Exception as e:  # noqa: BLE001
             job_log.record("daily_outreach", error=f"{type(e).__name__}: {e}")
 

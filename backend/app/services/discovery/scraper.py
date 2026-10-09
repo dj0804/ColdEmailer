@@ -337,22 +337,61 @@ def scrape_people(domain: str, max_pages: int = 4) -> list[dict]:
     return list(people.values())
 
 
-def scrape_emails(domain: str, max_pages: int = 9) -> list[dict]:
-    """Return emails found on the company's own team/about/contact pages.
+# Link text/href words that point at the pages where hiring inboxes live. Sites
+# put these at all sorts of paths (/careers.html, /company/join-us, careers.x.com),
+# so following the homepage's own links finds far more than fixed paths alone.
+_HIRING_LINK = re.compile(
+    r"career|jobs?\b|join|hiring|work[- ]?with|talent|contact|reach[- ]?us|get[- ]?in[- ]?touch",
+    re.I,
+)
 
-    Each result: {email, name, title, page, is_role}. Emails are filtered to the
-    company domain to avoid picking up vendors/social handles. Names come from
-    the surrounding DOM where possible, else are inferred from the local part.
+
+def _hiring_links(
+    soup: BeautifulSoup, page_url: str, root_host: str, limit: int = 6
+) -> list[str]:
+    """Same-company links from a page whose href or text suggests careers/contact."""
+    out: list[str] = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if href.startswith(("mailto:", "tel:", "javascript:", "#")):
+            continue
+        text = " ".join(a.get_text(" ").split())[:60]
+        if not (_HIRING_LINK.search(href) or _HIRING_LINK.search(text)):
+            continue
+        url = urljoin(page_url, href).split("#")[0]
+        if url.startswith("http") and _same_company(url, root_host) and url not in out:
+            out.append(url)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def scrape_emails(domain: str, max_pages: int = 10) -> list[dict]:
+    """Return emails found on the company's own careers/contact/team pages.
+
+    Each result: {email, name, title, page, is_role, kind}. Emails are filtered
+    to the company domain to avoid picking up vendors/social handles. Names come
+    from the surrounding DOM where possible, else are inferred from the local part.
+
+    Pages are visited in priority order: the homepage, then careers/contact
+    links found on it (or on the first page that loads), then the fixed
+    CANDIDATE_PATHS. Stops early once a hiring
+    inbox is found, since nothing later can beat it.
     """
     base = domain if domain.startswith("http") else f"https://{domain}"
     root_host = urlparse(base).hostname or domain
     found: dict[str, dict] = {}
 
+    queue = [urljoin(base + "/", p.lstrip("/")) for p in CANDIDATE_PATHS]
+    visited: set[str] = set()
     pages_fetched = 0
-    for path in CANDIDATE_PATHS:
-        if pages_fetched >= max_pages:
-            break
-        url = urljoin(base + "/", path.lstrip("/"))
+    links_followed = False
+    while queue and pages_fetched < max_pages:
+        url = queue.pop(0)
+        key = url.rstrip("/").lower()
+        if key in visited:
+            continue
+        visited.add(key)
         if not _same_company(url, root_host):
             continue
         if not _robots_ok(url):
@@ -362,10 +401,15 @@ def scrape_emails(domain: str, max_pages: int = 9) -> list[dict]:
         if not html:
             continue
         soup = BeautifulSoup(html, "html.parser")
+        if not links_followed:
+            # First page that loads (normally the homepage): its own
+            # careers/contact links jump the queue.
+            links_followed = True
+            queue = _hiring_links(soup, url, root_host) + queue
 
         # Prefer mailto: links — they carry DOM context we can read a name from.
         candidates: dict[str, tuple[str | None, str | None]] = {}
-        for a in soup.select("a[href^=mailto]"):
+        for a in soup.select("a[href^=mailto], a[href^=MAILTO]"):
             # Pull the address out with the regex rather than prefix-stripping:
             # real hrefs include 'MAILTO:', 'mailto:mailto:' and %-encoding.
             m = EMAIL_RE.search(unquote(a.get("href", "")))
@@ -375,7 +419,7 @@ def scrape_emails(domain: str, max_pages: int = 9) -> list[dict]:
             candidates.setdefault(addr, (None, None))
 
         for email, (dom_name, dom_title) in candidates.items():
-            email = email.lower()
+            email = email.lower().strip(".")
             if _registrable(email.split("@")[-1]) != _registrable(root_host):
                 continue  # skip vendor/social emails
             found.setdefault(
@@ -390,6 +434,8 @@ def scrape_emails(domain: str, max_pages: int = 9) -> list[dict]:
                     "kind": inbox_kind(email, url, dom_title, dom_name),
                 },
             )
+        if any(c["kind"] == "hiring" for c in found.values()):
+            break
 
     # Personal, named addresses first; shared role inboxes last.
     return sorted(

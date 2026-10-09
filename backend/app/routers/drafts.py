@@ -37,14 +37,18 @@ def list_drafts(
 
 
 @router.post("/send-all")
-def send_all_pending(at: datetime | None = Query(default=None)):
+def send_all_pending(
+    at: datetime | None = Query(default=None),
+    draft_type: str | None = Query(default=None, alias="type"),
+):
     """Approve every currently-pending draft and send them, spaced 1-3 min apart.
 
     With ``at`` (ISO 8601 with a timezone offset), sending starts at that time
-    instead of now. Runs in the background; poll GET /send-all for progress.
+    instead of now; with ``type`` (outreach | nudge1 | nudge2), only drafts of
+    that type are included. Runs in the background; poll GET /send-all for progress.
     """
     try:
-        return bulk_send.start(at)
+        return bulk_send.start(at, draft_type=draft_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

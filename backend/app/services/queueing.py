@@ -84,7 +84,9 @@ def add_targets(db: Session, targets: list[dict]) -> dict:
             "added_names": added, "skipped_names": skipped}
 
 
-def next_batch(db: Session, limit: int) -> list[Company]:
+def next_batch(
+    db: Session, limit: int, min_priority: int | None = None, max_priority: int | None = None
+) -> list[Company]:
     """Queued companies without a real application yet, best-priority first.
 
     An application still at stage 'draft' means drafting failed (e.g. the LLM was
@@ -99,6 +101,8 @@ def next_batch(db: Session, limit: int) -> list[Company]:
             .where(
                 Company.queue_status == "queued",
                 Company.id.not_in(have_app),
+                *([Company.priority >= min_priority] if min_priority is not None else []),
+                *([Company.priority <= max_priority] if max_priority is not None else []),
             )
             .order_by(Company.priority, Company.id)
             .limit(limit)

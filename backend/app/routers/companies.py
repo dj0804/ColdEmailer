@@ -9,6 +9,8 @@ from ..db import get_db
 from ..services.discovery import chain
 from ..services.queueing import normalize_domain
 
+DEFAULT_ROLE = "Full-time AI/ML Engineer or Data Scientist (fresher / new grad)"
+
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 
@@ -92,8 +94,11 @@ def quick_send(payload: schemas.QuickSend, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(contact)
 
-    role = payload.target_role or company.target_role or "6-month internship"
-    variant = payload.resume_variant or queueing.infer_variant(role)
+    given_role = payload.target_role or company.target_role
+    role = given_role or DEFAULT_ROLE
+    # Infer the resume only from a role someone actually gave: the default mentions
+    # "Data Scientist" and would otherwise force that resume onto every send.
+    variant = payload.resume_variant or queueing.infer_variant(given_role)
     app = drafting.ensure_application(db, company.id, role, contact.id, variant)
 
     try:
@@ -189,8 +194,11 @@ def manual_contact(payload: schemas.ManualContact, db: Session = Depends(get_db)
         db.commit()
         db.refresh(contact)
 
-    role = payload.target_role or company.target_role or "6-month internship"
-    variant = payload.resume_variant or queueing.infer_variant(role)
+    given_role = payload.target_role or company.target_role
+    role = given_role or DEFAULT_ROLE
+    # Infer the resume only from a role someone actually gave: the default mentions
+    # "Data Scientist" and would otherwise force that resume onto every send.
+    variant = payload.resume_variant or queueing.infer_variant(given_role)
     app = drafting.ensure_application(db, company.id, role, contact.id, variant)
 
     try:
