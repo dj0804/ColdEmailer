@@ -411,12 +411,14 @@ def scrape_emails(domain: str, max_pages: int = 10) -> list[dict]:
 
         # Prefer mailto: links — they carry DOM context we can read a name from.
         candidates: dict[str, tuple[str | None, str | None]] = {}
+        linked: set[str] = set()
         for a in soup.select("a[href^=mailto], a[href^=MAILTO]"):
             # Pull the address out with the regex rather than prefix-stripping:
             # real hrefs include 'MAILTO:', 'mailto:mailto:' and %-encoding.
             m = EMAIL_RE.search(unquote(a.get("href", "")))
             if m:
                 candidates[m.group(0)] = _nearby_person(a)
+                linked.add(m.group(0).lower().strip("."))
         for addr in EMAIL_RE.findall(soup.get_text(" ")):
             candidates.setdefault(addr, (None, None))
 
@@ -434,6 +436,9 @@ def scrape_emails(domain: str, max_pages: int = 10) -> list[dict]:
                     "page": url,
                     "is_role": is_role_address(email),
                     "kind": inbox_kind(email, url, dom_title, dom_name),
+                    # 'mailto' = a deliberate, clickable contact link; 'text' = the
+                    # address only appears in page text (footers, old copy).
+                    "via": "mailto" if email in linked else "text",
                 },
             )
         if any(c["kind"] == "hiring" for c in found.values()):
