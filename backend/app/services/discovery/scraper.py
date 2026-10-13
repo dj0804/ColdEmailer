@@ -149,6 +149,8 @@ ROLE_LOCALPARTS = {
     "talent", "people", "hiring", "recruiter", "recruiters", "humanresources",
     "talentacquisition", "ta", "campus", "internship", "internships", "hrd",
     "abuse", "compliance", "grievance", "dpo", "investors", "ir", "pr",
+    "whistleblower", "whistleblowing", "ethics", "vigilance", "nodal", "complaints",
+    "escalation", "escalations", "redressal", "posh",
     "customercare", "care", "feedback", "orders", "noreply", "newsletter",
 }
 
