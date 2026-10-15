@@ -151,6 +151,9 @@ ROLE_LOCALPARTS = {
     "abuse", "compliance", "grievance", "dpo", "investors", "ir", "pr",
     "whistleblower", "whistleblowing", "ethics", "vigilance", "nodal", "complaints",
     "escalation", "escalations", "redressal", "posh",
+    # Job-scam reporting inboxes (recruitment.fraud@...) look like hiring
+    # addresses but go to security/legal teams.
+    "fraud", "scam", "scams", "phishing", "fake", "reportfraud",
     "customercare", "care", "feedback", "orders", "noreply", "newsletter",
 }
 
