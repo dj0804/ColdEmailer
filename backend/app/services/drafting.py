@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..models import Application, Company, Contact, EmailDraft
@@ -36,16 +36,22 @@ def ensure_application(
     resume_variant: str | None = None,
 ) -> Application:
     """Reuse a company's open application if one exists, else create one."""
+    explicit_contact = contact_id
     if contact_id is None:
         c = latest_contact(db, company_id)
         contact_id = c.id if c else None
 
-    existing = db.scalar(
-        select(Application).where(
-            Application.company_id == company_id,
-            Application.stage.in_(["draft", "pending_approval"]),
-        )
+    query = select(Application).where(
+        Application.company_id == company_id,
+        Application.stage.in_(["draft", "pending_approval"]),
     )
+    # A named contact needs its own application: drafts send to application.contact,
+    # so reusing another contact's open application would misaddress the email.
+    if explicit_contact is not None:
+        query = query.where(
+            or_(Application.contact_id == explicit_contact, Application.contact_id.is_(None))
+        )
+    existing = db.scalar(query)
     if existing:
         if contact_id and not existing.contact_id:
             existing.contact_id = contact_id

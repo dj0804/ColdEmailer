@@ -18,6 +18,9 @@ from ..models import Application, Contact, EmailDraft, NudgeHistory
 from . import gmail, rate_limit
 
 
+RESEND_BATCH = "resend"
+
+
 class NotApproved(Exception):
     pass
 
@@ -54,7 +57,8 @@ def send_approved_draft(db: Session, draft_id: int) -> dict:
     # A fresh outreach must never go to someone we've already cold-emailed, even
     # via a different Application row (duplicate company entries are easy to
     # create). Nudges are exempt: they're replies on an existing thread.
-    if draft.type == "outreach" and app.contact_id:
+    # A deliberate re-email is marked with batch_id RESEND_BATCH.
+    if draft.type == "outreach" and draft.batch_id != RESEND_BATCH and app.contact_id:
         contact = db.get(Contact, app.contact_id)
         if contact and contact.email:
             already = db.scalar(
